@@ -1,0 +1,20 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.todos/
+node_modules/
+.svelte-kit/
+dist/
+coverage/
+
+# Exported local data and generated model artifacts
+data/*.jsonl
+data/*.bin
+data/manifest.json
+checkpoints/
+
+# Optional downloaded comparison models and browser-test artifacts
+.cache/
+playwright-report/
+test-results/

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>birds-llm-lab plan</title>
+<style>
+:root{--bg:#f8f9fa;--card:#fff;--border:#e9ecef;--text:#212529;--muted:#495057;--accent:#0a5940;--accent-soft:#e3f3ec;--link:#084298}
+*{box-sizing:border-box} html{font-size:18px}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+main{max-width:940px;margin:0 auto;padding:24px 16px 64px}
+article{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px}
+h1{font-size:1.5rem;margin:0 0 12px} h2{font-size:1.15rem;margin:28px 0 8px;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:4px} h3{font-size:1rem;margin:20px 0 6px}
+p,li{font-size:0.95rem} code{font-size:0.85em;background:var(--accent-soft);padding:1px 4px;border-radius:4px}
+pre{background:#f1f3f5;padding:12px;border-radius:8px;overflow-x:auto} pre code{background:none;padding:0}
+a{color:var(--link)}
+table{border-collapse:collapse;font-size:0.86rem;margin:10px 0;display:block;overflow-x:auto}
+td,th{border:1px solid var(--border);padding:6px 9px;vertical-align:top} th{background:var(--bg);text-align:left}
+.src{color:var(--muted);font-size:0.8rem;margin-top:24px}
+</style></head><body><main><article>
+<h1>birds-llm-lab — an animated, inspectable tiny LLM (plan)</h1>
+<p><strong>Status:</strong> PLAN v1 (2026-09-28). Written by Claude Code (the birds CC session) for the owner, Gaylon Vorwaller, to hand to a separate implementing agent: another Claude session, ChatGPT/Codex, or AGY. <strong>Nothing is built yet.</strong> Read this whole document before writing any code.</p>
+<h2>1. Purpose</h2>
+<p>A <strong>local-only teaching app</strong> that gives the owner a solid conceptual understanding of how a large language model works. It does that by <strong>training a real, tiny, decoder-only transformer on bird text from the birds app's local test database, and animating every step</strong>:
+- how text becomes tokens;
+- how tokens become vectors;
+- how weights (parameters) transform those vectors, and how attention decides what to look at;
+- how the model produces a probability for every possible next token;
+- how one token is picked, and how it all repeats;
+- how training adjusts the weights;
+- and why the process can confidently produce false statements ("hallucination").</p>
+<p><strong>Who it's for:</strong> the owner, a programmer for 42 years who is expert in rule-based decision systems and new to modern ML. <strong>Explain concepts plainly, and never hide the math:</strong> every number shown on screen must be traceable to code and stored values. Prefer "show the actual numbers" over metaphors. Where a metaphor helps, label it as one.</p>
+<p><strong>Why a tiny model:</strong> production LLMs have billions of weights and can't be shown. A model with roughly 100k–300k weights uses <strong>exactly the same machinery</strong> (tokenizer, embeddings, attention, MLP, residual stream, softmax, cross-entropy, gradient descent), and every weight can be displayed.</p>
+<h2>2. Hard rules for the implementing agent</h2>
+<ol>
+<li><strong>Local only.</strong> Never deploy. Never contact the production droplet, <code>birds.gaylon.photos</code>, or any production database. <strong>No Anthropic, OpenAI or other LLM API calls</strong> from the app.</li>
+<li><strong>Data comes only from the local birds test database,</strong> read-only:
+   - Postgres 17 at <code>127.0.0.1:15436</code>, database <code>birds_test</code>;
+   - connection settings are read at export time from <code>~/birds/.env.test</code> (<code>PGHOST</code>, <code>PGPORT</code>, <code>PGDATABASE</code>, <code>PGUSER</code>, <code>PGPASSWORD</code>).
+   - <strong>Never copy credentials into this repo.</strong> The export runs inside <code>BEGIN READ ONLY</code>.
+   - If the database isn't running, tell the owner to run <code>npm run test:db:up</code> in <code>~/birds</code>. Never start, reset or modify it yourself.</li>
+<li><strong>Never modify <code>~/birds</code>.</strong> This is a separate repo at <code>~/birds-llm-lab</code> with its own <code>git init</code>. Don't copy code or secrets from birds, beyond reading the DB as above.</li>
+<li><strong>No network at runtime,</strong> except the optional real-tokenizer and GPT-2 comparison (§6.9). Its model download must be opt-in, owner-approved, and happen once into a local cache.</li>
+<li><strong>The core model is written from scratch in TypeScript</strong> using <code>Float32Array</code> math. No TensorFlow.js, ONNX, PyTorch or ML library for the tiny model. The point is that every multiply is visible, readable code. (Test-only numeric helpers are fine.)</li>
+<li><strong>Correctness before animation.</strong> Every mathematical component has unit tests, including a finite-difference gradient check (§8), before any UI is built on it.</li>
+<li><strong>Commit per milestone,</strong> with a short summary. Ask the owner when a requirement is unclear; don't guess.</li>
+<li><strong>Keep a <code>docs/devlog/YYYY-MM-DD.md</code></strong> with what was built, what was verified, and open questions.</li>
+</ol>
+<h2>3. Stack</h2>
+<ul>
+<li><strong>Vite + Svelte 5 (runes) + TypeScript</strong>, the same as the owner's birds app. Plain CSS with design tokens, light and dark themes.</li>
+<li><strong>Node ≥ 22</strong> for scripts. <code>vitest</code> for tests.</li>
+<li><strong>Training</strong> runs in a <strong>Web Worker</strong> in the browser for the live training view, <em>and</em> as a Node script (<code>npm run train</code>) that produces a ready-made checkpoint. The app then works immediately without training first.</li>
+<li><strong>Storage:</strong> plain JSON and binary files in <code>data/</code> and <code>checkpoints/</code>, gitignored if large (&gt;5 MB). IndexedDB only for user-saved checkpoints in the browser.</li>
+<li><strong>Charts and heatmaps:</strong> SVG or Canvas drawn directly. An optional small charting library is fine for the loss curve, but heatmaps should be drawn directly so cell-to-value mapping is exact.</li>
+</ul>
+<h2>4. Data export (Milestone 0)</h2>
+<p><code>npm run export</code> runs <code>scripts/export-corpus.ts</code>, which connects read-only using <code>~/birds/.env.test</code> and writes <code>data/corpus.jsonl</code> (gitignored). Each line:</p>
+<pre><code class="language-json">{ &quot;code&quot;: &quot;amekes&quot;, &quot;name&quot;: &quot;American Kestrel&quot;, &quot;sci&quot;: &quot;Falco sparverius&quot;,
+  &quot;order&quot;: &quot;Falconiformes&quot;, &quot;family&quot;: &quot;Falconidae&quot;,
+  &quot;extract&quot;: &quot;…&quot;, &quot;sections&quot;: [{&quot;title&quot;: &quot;Habitat&quot;, &quot;text&quot;: &quot;…&quot;}],
+  &quot;field_craft&quot;: &quot;…&quot;, &quot;tags&quot;: [&quot;habitat:grassland&quot;, &quot;…&quot;] }
+</code></pre>
+<ul>
+<li><strong>Source query (read-only):</strong> <code>species_enrichment</code> (<code>wikipedia_extract</code>, <code>wikipedia_sections</code>, <code>field_craft</code>, <code>tags</code>), joined to <code>taxonomy_cache</code> (<code>com_name</code>, <code>sci_name</code>, <code>order_name</code>, <code>family_sci_name</code>) where <code>category='species'</code> and <code>wikipedia_extract IS NOT NULL</code>.</li>
+<li><strong>Measured 2026-09-28:</strong> 10,886 articles; extracts ≈4.6 MB total (≈430 characters each); section JSON ≈33 MB; field craft ≈4.9 MB.</li>
+<li><strong>Corpus toggles:</strong></li>
+<li><strong>Wikipedia text</strong> (default for training): human-written.</li>
+<li><strong>Field craft:</strong> <em>AI-generated</em> by the birds app, so label it that way in the UI wherever it's used. It's excluded from default training, which keeps the "the model only learns from the text we give it" story clean.</li>
+<li><strong>Split</strong> by species into train, validation and test (90/5/5), seeded and <strong>stable across runs</strong>. Hold out a few famous species by name for the demos, such as American Kestrel, Osprey, Wandering Albatross and Northern Cardinal.</li>
+<li><code>data/manifest.json</code> records row counts, byte counts, the export time, the git commit and a hash of the corpus file.</li>
+</ul>
+<h2>5. Model specification (Milestone 1–2)</h2>
+<p><strong>Tokenizer: byte-pair encoding (BPE), trained from scratch on the train split.</strong>
+- Start from bytes (256 base tokens) plus special tokens <code>&lt;|bos|&gt;</code>, <code>&lt;|eos|&gt;</code> and <code>&lt;|pad|&gt;</code>.
+- Learn merges up to a target vocabulary. Default <strong>1,024</strong>, configurable 256–4,096.
+- Store <code>tokenizer.json</code>: the ordered merge list, the vocabulary (id → byte sequence → display string) and the frequency of each merge at the time it was learned.
+- Round-trip guarantee: <code>decode(encode(s)) === s</code> for any string.</p>
+<p><strong>Transformer: decoder-only (GPT-style), pre-LayerNorm.</strong>
+- <strong>Defaults:</strong> <code>vocab 1024</code>, <code>d_model 64</code>, <code>layers 2</code>, <code>heads 4</code> (head size 16), <code>context 64</code> tokens, <code>mlp 256</code> (4×), GELU, learned positional embeddings, and tied input/output embeddings (optional toggle).
+- <strong>Parameters:</strong> the app must compute and display the exact count per matrix and in total. It's about 100k–200k at the defaults.
+- <strong>Per block:</strong> <code>x + Attn(LN(x))</code>, then <code>x + MLP(LN(x))</code>, with a causal mask. The final LN goes to the unembedding (logits).
+- <strong>Deterministic:</strong> a seeded RNG for initialization and sampling.
+- <strong>Training:</strong> cross-entropy on next-token prediction, AdamW, cosine learning-rate schedule with warmup, gradient clipping, batch size and steps configurable. It reports train and validation loss, and perplexity.
+- <strong>Target:</strong> the ready-made checkpoint trains on the M4 in ≤15 minutes via <code>npm run train</code>, and produces recognizable bird-like sentences.</p>
+<p><strong>Checkpoints</strong> (<code>checkpoints/&lt;name&gt;/</code>):
+- <code>config.json</code>, <code>tokenizer.json</code>, <code>weights.bin</code> (Float32, in a documented order), <code>weights.index.json</code> (name, shape, offset for each matrix);
+- <code>training-log.json</code> (loss per step, with sample generations every N steps).</p>
+<p><strong>Backpropagation</strong> is implemented by hand, one function per layer, with its own backward pass. This is the educational core; don't hide it.</p>
+<h2>6. Screens (Milestones 3–6)</h2>
+<p>Every screen has three things:
+- (a) the live visualization;
+- (b) a collapsible <strong>"What's happening"</strong> panel in plain English;
+- (c) a collapsible <strong>"The actual math"</strong> panel showing the formula <em>and the real numbers for one highlighted cell</em>, e.g. how one attention score was computed from the actual q and k values.</p>
+<p>Global controls: model and checkpoint picker, a prompt box, and step controls (play/pause/step-forward/step-back, with a speed slider). Everything works at 1280 px and at laptop widths.</p>
+<ol>
+<li><strong>Tokenizer lab.</strong>
+   - Type any text: see the token boundaries (colored chips), token ids and byte sequences.
+   - <strong>Merge replay:</strong> animate BPE learning from bytes. Pick a word ("Warbler") and watch its pieces merge step by step.
+   - Show the vocabulary sorted by merge order, with counts.
+   - Show "why numbers and rare names split into many tokens".
+   - Compare the token count for the same sentence under vocabularies of 256, 1,024 and 4,096 (retraining the tokenizer quickly on a subset is fine).</li>
+<li><strong>Embeddings.</strong>
+   - Each token id is a row of <code>d_model</code> numbers; show the actual row as a strip of colored cells with values on hover.
+   - A 2-D map (PCA, computed in code, no library magic) of token embeddings, before training (random) vs after training (structure).
+   - Search a token and show its nearest neighbours by cosine similarity, with the similarity numbers.</li>
+<li><strong>Forward pass, animated.</strong> Using a prompt (default: "The osprey dives into the water to catch"), step through:
+   - tokens → embedding rows + position rows → the residual stream (one vector per position, shown as a grid);
+   - each block's LayerNorm → Q/K/V projections (show the weight matrices as heatmaps and the resulting vectors);
+   - attention scores (the QKᵀ/√d heatmap with the causal mask visible) → softmax per row → the weighted sum of V;
+   - output projection → added to the residual stream;
+   - MLP (expand, GELU, contract) → added to the residual.</li>
+</ol>
+<p>Animate the data flow, and let the owner click any cell to see its exact computation.
+4. <strong>Attention explorer.</strong> For each layer and head, a heatmap of which earlier tokens each token attends to, with values. Toggle between heads, and include an "average heads" view. Include a few prompts where a head visibly attends to the bird name or the verb.
+5. <strong>Next-token prediction.</strong>
+   - Final vector → unembedding → one <strong>logit</strong> per vocabulary entry.
+   - Show the top 20 logits and their softmax probabilities as bars, and the full-vocabulary probability mass.
+   - Sliders for <strong>temperature</strong>, <strong>top-k</strong> and <strong>top-p</strong> that redraw the distribution live.
+   - "Pick": show the random number drawn and where it lands in the cumulative distribution.
+6. <strong>Generation loop.</strong> Repeat 5 token by token, appending as it goes. Show that it's the same computation run again, not "thinking ahead". Show the context window sliding when the prompt exceeds 64 tokens.
+7. <strong>Training view</strong> (the Web Worker trains live from a fresh random init):
+   - loss curves for train and validation;
+   - learning rate;
+   - a histogram of each weight matrix over time;
+   - a chosen weight matrix heatmap updating;
+   - sample generations every N steps, going from gibberish to bird-like sentences;
+   - gradient-norm plot;
+   - "one gradient step, slowed down": pick one parameter and show its value, its gradient, the Adam moment estimates and its new value.
+8. <strong>Hallucination demo.</strong>
+   - Prompts where the model confidently continues with something the training text never said about that bird, e.g. "The American Kestrel feeds far out at" → "sea".
+   - For each continuation, <strong>search the training corpus</strong> for the generated claim about that species and report whether it appears. If it doesn't, explain <em>mechanically</em> why it was produced: the continuation that other species' sentences made likely.
+   - Link the idea to the birds app's tag problem: plausible patterns, no source of truth.
+9. <strong>Scale comparison (optional; network opt-in).</strong>
+   - Tokenize the same sentences with a real production-grade tokenizer (e.g. GPT-2's BPE, or a modern one via a local package) and compare the token boundaries.
+   - Optionally load <strong>GPT-2 small (124M parameters)</strong> locally via <code>transformers.js</code> into a local cache, <strong>only after the owner approves the one-time download</strong>. Show its attention maps and next-token probabilities for the same prompt next to the tiny model's.
+   - A static page puts the sizes in perspective: this model's parameter count vs GPT-2 small vs published large-model sizes, labelled "public estimates" where not officially disclosed.
+10. <strong>Parameter explorer.</strong> A tree of every weight matrix (name, shape, count, min/max/mean/std) with a heatmap. Clicking a matrix shows where it's used in the forward-pass screen.</p>
+<p><strong>Glossary</strong> (always reachable): token, vocabulary, embedding, parameter/weight, bias, matrix multiply, dot product, attention, head, residual stream, LayerNorm, MLP, GELU, logit, softmax, temperature, cross-entropy, loss, gradient, backpropagation, learning rate, Adam, overfitting, validation set, context window, hallucination.</p>
+<h2>7. Milestones</h2>
+<table>
+<thead>
+<tr>
+<th>M</th>
+<th>Deliverable</th>
+<th>Done when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Repo scaffold, <code>export-corpus.ts</code>, data manifest</td>
+<td>corpus exported read-only; counts match §4; no secrets in repo</td>
+</tr>
+<tr>
+<td>1</td>
+<td>BPE tokenizer + Tokenizer lab (screen 1)</td>
+<td>round-trip tests pass; merge replay animates; vocabulary sizes compare</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Transformer forward/backward + <code>npm run train</code> + checkpoint</td>
+<td>gradient checks pass; train/val loss falls; checkpoint generates bird-like text; param count displayed</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Forward-pass animation + attention explorer (screens 3–4) + embeddings (screen 2)</td>
+<td>every displayed number equals the value recomputed in tests for a fixed seed/prompt</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Next-token + generation (screens 5–6)</td>
+<td>sampling reproducible with a seed; sliders change distribution correctly</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Live training view (screen 7)</td>
+<td>trains in a Worker without freezing UI; single-parameter Adam step matches the math</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Hallucination demo + parameter explorer + glossary (8, 10)</td>
+<td>corpus search shows claim absent; explorer covers all matrices</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Optional scale comparison (9)</td>
+<td>only after owner approves the download</td>
+</tr>
+</tbody>
+</table>
+<p>After each milestone: commit, write the devlog entry, and give the owner a 5-line summary with how to run it.</p>
+<h2>8. Verification</h2>
+<ul>
+<li><strong>Tokenizer:</strong> round-trip on the entire corpus; merges deterministic for a seed; special tokens are never split.</li>
+<li><strong>Math:</strong> unit tests for matmul, softmax (numerically stable), LayerNorm, GELU and cross-entropy against hand-computed small cases.</li>
+<li><strong>Gradient check:</strong> finite differences vs analytic gradients for every parameter group on a tiny config. Relative error &lt; 1e-3.</li>
+<li><strong>Determinism:</strong> a fixed seed produces the same init, the same training losses for the first 100 steps, and the same generation.</li>
+<li><strong>Display fidelity:</strong> for a fixed checkpoint and prompt, a test computes the attention matrix, logits and top-5 probabilities, and asserts the UI data layer returns identical numbers.</li>
+<li><strong>Safety:</strong></li>
+<li>a test asserts the export script opens a <code>READ ONLY</code> transaction;</li>
+<li>a repo scan asserts no credentials, and no hostnames other than <code>127.0.0.1</code> or <code>localhost</code>.</li>
+<li><code>npm run check</code> (svelte-check), <code>npm test</code> and <code>npm run build</code> pass.</li>
+</ul>
+<h2>9. Owner decisions already made</h2>
+<ul>
+<li>The location is <code>~/birds-llm-lab</code>, a separate repo, local only.</li>
+<li>Data comes from the birds <strong>test</strong> database, never production.</li>
+<li>The purpose is conceptual understanding, so correctness and traceability of every number beat polish.</li>
+</ul>
+<h2>10. Open questions for the owner (ask before building the relevant milestone)</h2>
+<ol>
+<li>Is the optional GPT-2 comparison (M7, a one-time download of ~500 MB) wanted at all?</li>
+<li>Should field craft ever be used as training text? It's AI-generated, so the default is no.</li>
+<li>Is a desktop browser enough? (That's the assumption; phone isn't required.)</li>
+<li>Is this plan reviewed by CODEX1 before handing off? (Recommended.)</li>
+</ol>
+<h2>11. Relation to the birds app</h2>
+<p>This lab is separate from the birds app's tag-accuracy work (td-894144, <code>~/birds/docs/2026-09-26-ai-tag-accuracy-plan-CC.md</code>). That plan's Phase 2 uses <em>classifiers</em> (never generators) for tags. This lab demonstrates <em>generation</em>, including why it hallucinates, which is exactly why the birds app refuses to let generation assign tags.</p>
+<p class="src">Source: plan.md</p>
+</article></main></body></html>
