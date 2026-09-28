@@ -1,0 +1,17 @@
+{
+  "code": "spécial",
+  "name": "Rufous-collared Sparrow — Chincol",
+  "sci": "Zonotrichia capensis",
+  "order": null,
+  "family": "",
+  "extract": "A literal <|bos|> spelling remains ordinary text. Café habitat.",
+  "sections": [
+    {
+      "title": "Range",
+      "text": "From México to Tierra del Fuego."
+    }
+  ],
+  "field_craft": null,
+  "tags": [],
+  "split": "train"
+}

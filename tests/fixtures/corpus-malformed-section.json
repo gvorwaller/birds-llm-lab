@@ -1,0 +1,17 @@
+{
+  "code": "badsec",
+  "name": "Malformed Section Bird",
+  "sci": "Avis invalidus",
+  "order": "Passeriformes",
+  "family": "Testidae",
+  "extract": "Valid row-level text.",
+  "sections": [
+    {
+      "title": "Habitat",
+      "text": 42
+    }
+  ],
+  "field_craft": "",
+  "tags": ["habitat:test"],
+  "split": "validation"
+}

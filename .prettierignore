@@ -1,0 +1,9 @@
+dist/
+node_modules/
+coverage/
+/data/
+/checkpoints/
+docs/plan.html
+docs/plan.md
+docs/implementation-plan.md
+AGENTS.md
