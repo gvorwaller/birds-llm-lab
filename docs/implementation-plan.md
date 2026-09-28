@@ -16,23 +16,26 @@ plan, then record the difference in the devlog.
 
 1. Read `AGENTS.md`, `docs/plan.md`, and this document completely.
 2. Run `td usage --new-session`, then inspect `td next` and `td status`.
-3. Do not read from, write to, start, stop, reset, or migrate the Birds database
-   except through the Milestone 0 export command. That command must use a
-   read-only transaction.
+3. Do not write to, reset, seed, or directly migrate the Birds database. If the
+   local test database is unavailable, the agent may run `npm run test:db:up` in
+   `~/birds`; this is the only permitted command outside this repository. The
+   Milestone 0 export must use a read-only transaction.
 4. Do not modify `~/birds`. It is a separate repository.
 5. Do not add an ML framework. Core model math must be readable TypeScript over
    `Float32Array`.
-6. Do not add network calls. The optional comparison milestone is blocked until
-   the owner explicitly approves it.
+6. Do not add outbound or non-loopback network calls. Localhost serves the app
+   and its control API. The optional external comparison milestone is blocked
+   until the owner explicitly approves it.
 7. Work on one numbered task below at a time. Add or update tests in the same
    task. Do not start the next milestone until the current exit gate passes.
 8. Add evidence to `docs/devlog/YYYY-MM-DD.md`, then make the milestone commit.
 9. If a stated contract is impossible or materially too slow, stop, record the
    measurement, and ask the owner. Do not silently replace it.
 
-## 2. Scope changes recommended after review
+## 2. Binding implementation decisions from plan review
 
-These changes make the original plan safer to implement and easier to verify:
+The following decisions are part of the implementation plan, not optional
+suggestions. An explicit owner answer in section 7 may override a decision.
 
 1. **Separate the numerical engine from visualization.** The model returns a
    normal output by default and an opt-in `ForwardTrace` for one inspected
@@ -58,14 +61,15 @@ These changes make the original plan safer to implement and easier to verify:
 
 ## 3. Decisions and exact contracts
 
-These defaults remove choices the implementing agent should not invent.
+These contracts remove choices the implementing agent should not invent.
 
 ### 3.1 Supported runtime
 
 - Node: `>=22 <23`; npm is the package manager.
 - Browser: current desktop Chrome and Safari at 1280 px and 1024 px widths.
-- Phone layout, deployment, authentication, multi-user storage, and server APIs
-  are out of scope.
+- Phone layout, remote deployment, authentication, and multi-user storage are
+  out of scope. A loopback-only Node control service is required so the owner can
+  export data, train, and select checkpoints without using the command line.
 - Vite + Svelte 5 runes + TypeScript with strict type checking.
 - Vitest is the unit/integration test runner. Add Playwright only when the first
   interactive screen exists.
@@ -87,6 +91,10 @@ src/
     components/      # reusable visual components
   routes/            # one route per lab screen plus glossary
   workers/           # live-training Worker entry
+server/
+  index.ts            # loopback HTTP server and static app host
+  jobs/               # bounded export/training job coordinator
+  routes/             # fixed local API; no arbitrary command execution
 scripts/
   export-corpus.ts
   train-tokenizer.ts
@@ -103,7 +111,42 @@ docs/devlog/
 No module under `src/lib/math`, `model`, `tokenizer`, `trace`, or `generation`
 may import Svelte, browser globals, Node-only modules, or database code.
 
-### 3.3 Tensor representation
+### 3.3 Local control service and owner workflow
+
+- The built app and JSON API are served by one Node process bound only to
+  `127.0.0.1:5301`. Do not bind to `0.0.0.0`, `::`, a LAN address, or a public
+  interface.
+- The service serves built static assets and these fixed operations:
+  `GET /api/status`, `GET /api/corpus/manifest`,
+  `POST /api/corpus/export`, `GET /api/jobs/:id`,
+  `POST /api/jobs/:id/cancel`, `GET /api/checkpoints`,
+  `POST /api/training/jobs`, and `POST /api/checkpoints/:id/select`.
+- API handlers call typed project modules directly. Never accept a shell command,
+  script path, database string, output path, or arbitrary trainer arguments from
+  the browser.
+- Permit only same-origin requests. Reject unexpected `Host` and `Origin`
+  headers, send no CORS opt-in headers, use a per-process CSRF token embedded in
+  the served app, and set a restrictive Content Security Policy. These controls
+  protect against a malicious website driving localhost endpoints.
+- Allow only one export and one training job at a time. Jobs have typed states,
+  progress, bounded retained logs, cancellation, and clear restart recovery.
+- The Data page is the owner's control surface: database/corpus status, export
+  button, manifest, training controls/progress, checkpoint list, active
+  checkpoint, errors, and recovery instructions. Owner-facing instructions must
+  never require Terminal.
+- Scripts remain available for agent automation and tests, but every owner task
+  must have an equivalent Data-page action.
+- A versioned `scripts/install-launch-agent.ts` writes
+  `~/Library/LaunchAgents/com.gaylon.birds-llm-lab.plist` using resolved absolute
+  paths, runs the built service at login, and writes stdout/stderr to
+  `~/Library/Logs/birds-llm-lab.log`. It validates the plist before loading it.
+- Add uninstall/status/restart scripts. Installation and removal must target only
+  this exact label and plist. Never unload or edit unrelated LaunchAgents.
+- After each milestone, the implementing agent builds, restarts this service,
+  verifies `/api/status`, and smoke-tests the changed owner workflow at
+  `http://localhost:5301`.
+
+### 3.4 Tensor representation
 
 - A tensor is `{ data: Float32Array, shape: readonly number[] }`.
 - Data is row-major. The last axis is contiguous.
@@ -115,7 +158,7 @@ may import Svelte, browser globals, Node-only modules, or database code.
 - Reuse caller-provided output/scratch buffers on hot paths after correctness is
   established. The first implementation may allocate for clarity.
 
-### 3.4 Model convention
+### 3.5 Model convention
 
 Use this exact default unless the owner approves a change:
 
@@ -149,7 +192,7 @@ Use this exact default unless the owner approves a change:
 - Causal attention masks future positions with negative infinity before stable
   softmax. Padding positions must also be masked if batching uses padding.
 
-### 3.5 Initialization, loss, and optimizer
+### 3.6 Initialization, loss, and optimizer
 
 - Implement one documented seeded PRNG usable in Node, browser, and Worker.
   Never use `Math.random()` in model initialization, split assignment, shuffling,
@@ -167,7 +210,7 @@ Use this exact default unless the owner approves a change:
 - Cosine decay is by optimizer step after linear warmup. Define step zero and the
   final step in a schedule unit test; avoid an off-by-one hidden in the trainer.
 
-### 3.6 BPE contract
+### 3.7 BPE contract
 
 - Raw text is encoded to UTF-8 bytes. Token ids `0..255` are byte tokens.
 - Reserve ids 256, 257, and 258 for `<|bos|>`, `<|eos|>`, and `<|pad|>`.
@@ -190,7 +233,7 @@ Use this exact default unless the owner approves a change:
   Therefore the minimum accepted configured size is 259, not 256. The UI label
   `256` is shorthand for byte-only and actually contains 259 ids. Explain this.
 
-### 3.7 Corpus contract
+### 3.8 Corpus contract
 
 The exporter reads connection values from `~/birds/.env.test`; it must not log
 them or copy them into generated files.
@@ -238,7 +281,7 @@ source-field byte counts, corpus SHA-256, split algorithm/version, template
 version, exporter git revision (or `null` with a warning), and database identity
 limited to host/port/database name. It must never include username or password.
 
-### 3.8 Checkpoint contract
+### 3.9 Checkpoint contract
 
 - Every artifact has `formatVersion: 1`.
 - `config.json` stores the complete model, optimizer, seed, corpus hash,
@@ -253,8 +296,11 @@ limited to host/port/database name. It must never include username or password.
 - `training-log.json` records step, split, mean loss, perplexity, learning rate,
   gradient norm before clipping, elapsed time, and seeded sample generations at
   configured intervals.
+- Publish the verified ready checkpoint as a GitHub Release asset with SHA-256
+  hashes and format/config metadata. Do not use Git LFS initially. The running
+  app uses an already-installed local copy and never downloads one implicitly.
 
-### 3.9 Trace and display-fidelity contract
+### 3.10 Trace and display-fidelity contract
 
 `forward(input, options)` returns logits and optionally a `ForwardTrace`. Trace
 entries use stable semantic names such as `blocks.0.attn.scores`; UI code never
@@ -291,7 +337,8 @@ when its named checks pass and the devlog contains the command and result.
 - Create the Vite/Svelte/TypeScript project without overwriting `docs/` or
   `AGENTS.md`.
 - Add scripts: `check`, `test`, `test:run`, `build`, `export`,
-  `train:tokenizer`, `train`, and `inspect:checkpoint`.
+  `train:tokenizer`, `train`, `inspect:checkpoint`, `serve`, `service:install`,
+  `service:status`, `service:restart`, and `service:uninstall`.
 - Add design-token CSS, an app shell, placeholder routes, and a no-network
   Content Security Policy suitable for development and production builds.
 - Add a visible `Local teaching app — no production data` banner.
@@ -316,14 +363,32 @@ when its named checks pass and the devlog contains the command and result.
 - Write to temporary files and atomically rename after hashing/validation.
 - Never print the connection string or password.
 - Tests/checks: query shape test with a fake client; failure-path rollback;
-  source scan for prohibited hosts/secrets; manual export only if local DB is
-  already running. Never start it from this repository.
+  source scan for prohibited hosts/secrets. If the local test database is not
+  running, the agent may start it only with `npm run test:db:up` in `~/birds`.
+  Never reset or seed it.
+
+#### M0.4 Add the local service, Data page, and LaunchAgent
+
+- Implement the exact loopback service and security rules in section 3.3.
+- Wire the Data-page export button to the same tested export module used by the
+  CLI; show progress, completion, errors, and the resulting manifest.
+- Add typed job state and cancellation. A browser refresh reconnects to the
+  current job rather than starting a duplicate.
+- Implement idempotent LaunchAgent install/status/restart/uninstall scripts.
+  Installation refuses to overwrite a differently owned or differently labeled
+  plist and prints no secrets.
+- Tests/checks: API contract tests, foreign Host/Origin/CSRF rejection, duplicate
+  job rejection, cancellation, static fallback, plist snapshot/validation, and
+  a real localhost smoke test from export click to displayed manifest.
 
 #### M0 exit gate and commit
 
 - Export completes without changing the source DB.
 - Manifest counts reconcile exactly with emitted JSONL.
 - No credential value is present in tracked or generated inspectable metadata.
+- The owner can export and inspect the manifest at `http://localhost:5301`
+  without opening Terminal; the service survives a browser refresh and restarts
+  through its LaunchAgent.
 - Commit: `feat: scaffold app and add read-only corpus export`.
 
 ### Milestone 1 — tokenizer engine, artifact, then UI
@@ -335,7 +400,7 @@ when its named checks pass and the devlog contains the command and result.
 
 #### M1.2 Deterministic BPE trainer
 
-- Implement the simple reference trainer exactly as section 3.6.
+- Implement the simple reference trainer exactly as section 3.7.
 - Test pair boundaries, tie-breaking, merge ordering, target sizes, repeated
   pairs, Unicode, empty documents, and deterministic artifact bytes.
 - Add a benchmark log for a 1 MB subset before optimizing.
@@ -418,12 +483,27 @@ when its named checks pass and the devlog contains the command and result.
 - Inspect generated samples during training but do not weaken correctness gates
   to force subjectively good prose.
 
+#### M2.7 Add owner-facing training and checkpoint controls
+
+- Connect the Data-page Train button to the same trainer module as the CLI via a
+  bounded background job. Use a safe preset form, not arbitrary CLI arguments.
+- Show current step/total, loss, validation loss, learning rate, elapsed/estimated
+  time, latest sample, pause/cancel state, and terminal errors.
+- List only validated checkpoints under the configured checkpoint directory.
+  Selection persists locally and immediately updates the global picker.
+- A service or browser restart recovers completed artifacts and clearly marks an
+  interrupted job; it never presents a partial checkpoint as usable.
+- Tests/checks: job lifecycle, invalid settings, duplicate start, cancellation,
+  interrupted recovery, checkpoint validation/selection, and localhost smoke.
+
 #### M2 exit gate and commit
 
 - All math and gradient checks pass.
 - Two fixed-seed 100-step runs have identical logged numbers on the same runtime.
 - Train and validation loss fall from initialization.
 - Ready checkpoint loads, generates, and records exact config/corpus hashes.
+- The owner can start training, watch progress, cancel safely, and select a valid
+  checkpoint without opening Terminal.
 - Commit: `feat: add from-scratch transformer training and checkpoints`.
 
 ### Milestone 3 — trace boundary and first inspection slice
@@ -573,7 +653,7 @@ for this milestone until the owner explicitly says to proceed.
 If approved, first write a separate mini-plan covering package choice, exact
 download size/license/source, cache location, offline behavior, deletion, CSP,
 checkpoint integrity, and how attention/token probabilities are extracted. The
-one-time download must require a deliberate UI or CLI confirmation and the core
+one-time download must require deliberate confirmation in the app and the core
 app must continue working with an empty cache.
 
 ## 5. Required verification matrix
@@ -592,8 +672,10 @@ milestone gate.
 | UI fidelity | selected-cell engine/trace/UI equality tests |
 | Worker | responsiveness, pause/resume, cancellation, error propagation |
 | Safety | read-only transaction test, secret scan, prohibited-host scan |
+| Local API | loopback binding, Host/Origin/CSRF rejection, bounded jobs |
+| Owner workflow | Data-page export/train/select without Terminal |
 | Layout/a11y | keyboard pass, reduced motion, 1024/1280 visual snapshots |
-| Release | clean clone/install/check/test/build with no local data present |
+| Release | clean clone/install/check/test/build; LaunchAgent restart and smoke |
 
 The prohibited-host scan applies to executable source, configuration, generated
 bundles, and package scripts. Documentation may name forbidden production hosts
@@ -619,36 +701,34 @@ Questions requiring owner decision:
 Never report a check as passing if it was not executed. Distinguish test evidence
 from visual/manual observation.
 
-## 7. Owner questions and default assumptions
+## 7. Owner decision survey
 
-Implementation can begin through Milestone 2 using the defaults below. Answer
-before the named later milestone if a default should change.
+The reviewed choices are now adopted by the plan wherever a choice is marked
+`A (plan)`. Implementation proceeds with those choices unless the owner selects
+another option. The license remains undecided and blocks adding a license file.
 
-1. **License:** Should the public repository use MIT, another license, or remain
-   public with no license? **Current default: no license until answered.**
-2. **Corpus content (before M0.3):** Should Wikipedia sections be included in
-   default training in addition to extracts? **Recommended/default: yes.** This
-   resolves an ambiguity in the original plan and uses the richer stated corpus.
-3. **Field craft (before M0.3):** Should AI-generated field craft ever be an
-   opt-in corpus source? **Recommended/default: export it but exclude it from all
-   default training and demos.**
-4. **Desktop target (before M0.1):** Is current desktop Chrome/Safari at 1024 px
-   and wider sufficient? **Recommended/default: yes; no phone support.**
-5. **Checkpoint artifacts (before M2.6):** The likely checkpoint may exceed
-   GitHub's comfortable source-review size. Should a ready checkpoint be attached
-   to a GitHub Release, generated locally only, or tracked if under 5 MB?
-   **Recommended: GitHub Release artifact with hashes; never Git LFS initially.**
-6. **Optional comparison (before M7):** Is GPT-2 comparison wanted at all?
-   **Recommended: defer until the core teaching app is complete. No download is
-   approved by this plan.**
-7. **Visual direction (before M1.4):** Should the interface visually echo the
-   Birds app, or have a distinct laboratory/notebook identity?
-   **Recommended: distinct lab identity while reusing accessibility habits.**
+Reply in the compact form `Q1 A, Q2 A, ...` and add words only where an option
+requests them.
+
+| ID | Question | A | B | C |
+|---|---|---|---|---|
+| Q1 | Public-repository license | MIT | No license (current temporary state) | Another license: name it |
+| Q2 | Default Wikipedia training text | **Extracts and sections (plan)** | Extracts only | Another selection: describe it |
+| Q3 | AI-generated field craft | **Export, label, and exclude from default training/demos (plan)** | Do not export it | Include it in default training |
+| Q4 | Supported owner devices | **Current Chrome and Safari at 1024 px+; no phone support (plan)** | Current Chrome only | Include phone support |
+| Q5 | Ready-checkpoint distribution | **GitHub Release asset with hashes; no Git LFS (plan)** | Local generation only | Track it when under 5 MB |
+| Q6 | GPT-2 comparison | **Defer until core Milestones 0–6 are complete (plan)** | Omit it permanently | Include it in the initial build |
+| Q7 | Visual direction | **Distinct laboratory/notebook identity with strong accessibility (plan)** | Visually echo the Birds app | Another direction: describe it |
+
+No response to Q2–Q7 is required to begin: the bold plan selections are binding.
+Q1 may be answered at any time before a license is added.
 
 ## 8. Definition of project completion
 
 The core project is complete when Milestones 0–6 pass their gates from a clean
-clone, the app starts without corpus/checkpoint data and explains how to create
-them, a verified ready checkpoint can be installed without credentials, every
-displayed numerical claim is traceable to engine data, and no core runtime path
-requires network access. Milestone 7 is optional and does not block completion.
+clone, the LaunchAgent keeps the loopback app available, the owner can export
+the corpus and train/select checkpoints entirely through the Data page, a
+verified ready checkpoint can be installed without credentials, every displayed
+numerical claim is traceable to engine data, and no core runtime path requires
+outbound or non-loopback network access. Milestone 7 is optional and does not
+block completion.

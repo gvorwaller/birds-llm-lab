@@ -24,13 +24,16 @@ A **local-only teaching app** that gives the owner a solid conceptual understand
    - Postgres 17 at `127.0.0.1:15436`, database `birds_test`;
    - connection settings are read at export time from `~/birds/.env.test` (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`).
    - **Never copy credentials into this repo.** The export runs inside `BEGIN READ ONLY`.
-   - If the database isn't running, tell the owner to run `npm run test:db:up` in `~/birds`. Never start, reset or modify it yourself.
+   - If the database isn't running, **you** (the agent) run `npm run test:db:up` in `~/birds`. It's idempotent: it only starts or migrates, never resets or seeds. Never reset, seed or modify its data.
 3. **Never modify `~/birds`.** This is a separate repo at `~/birds-llm-lab` with its own `git init`. Don't copy code or secrets from birds, beyond reading the DB as above.
 4. **No network at runtime,** except the optional real-tokenizer and GPT-2 comparison (§6.9). Its model download must be opt-in, owner-approved, and happen once into a local cache.
 5. **The core model is written from scratch in TypeScript** using `Float32Array` math. No TensorFlow.js, ONNX, PyTorch or ML library for the tiny model. The point is that every multiply is visible, readable code. (Test-only numeric helpers are fine.)
 6. **Correctness before animation.** Every mathematical component has unit tests, including a finite-difference gradient check (§8), before any UI is built on it.
 7. **Commit per milestone,** with a short summary. Ask the owner when a requirement is unclear; don't guess.
 8. **Keep a `docs/devlog/YYYY-MM-DD.md`** with what was built, what was verified, and open questions.
+9. **The owner never uses the command line.** Scripts (`npm run export`, `npm run train`, tests) are for *you*. Everything the owner does happens in the app:
+   - **In-app "Data" page:** an "Export corpus from local birds DB" button, with a status and the manifest shown; a "Train new checkpoint" button with progress; and a checkpoint list and picker.
+   - **The app is always available:** install a macOS **LaunchAgent** (`~/Library/LaunchAgents/com.gaylon.birds-llm-lab.plist`) that serves the built app at a fixed port, `http://localhost:5301`, restarts on login, and logs to `~/Library/Logs/birds-llm-lab.log`. After each milestone, rebuild and restart it yourself, so the owner only opens the bookmark.
 
 ## 3. Stack
 

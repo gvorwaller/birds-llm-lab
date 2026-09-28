@@ -35,13 +35,16 @@ td,th{border:1px solid var(--border);padding:6px 9px;vertical-align:top} th{back
    - Postgres 17 at <code>127.0.0.1:15436</code>, database <code>birds_test</code>;
    - connection settings are read at export time from <code>~/birds/.env.test</code> (<code>PGHOST</code>, <code>PGPORT</code>, <code>PGDATABASE</code>, <code>PGUSER</code>, <code>PGPASSWORD</code>).
    - <strong>Never copy credentials into this repo.</strong> The export runs inside <code>BEGIN READ ONLY</code>.
-   - If the database isn't running, tell the owner to run <code>npm run test:db:up</code> in <code>~/birds</code>. Never start, reset or modify it yourself.</li>
+   - If the database isn't running, <strong>you</strong> (the agent) run <code>npm run test:db:up</code> in <code>~/birds</code>. It's idempotent: it only starts or migrates, never resets or seeds. Never reset, seed or modify its data.</li>
 <li><strong>Never modify <code>~/birds</code>.</strong> This is a separate repo at <code>~/birds-llm-lab</code> with its own <code>git init</code>. Don't copy code or secrets from birds, beyond reading the DB as above.</li>
 <li><strong>No network at runtime,</strong> except the optional real-tokenizer and GPT-2 comparison (§6.9). Its model download must be opt-in, owner-approved, and happen once into a local cache.</li>
 <li><strong>The core model is written from scratch in TypeScript</strong> using <code>Float32Array</code> math. No TensorFlow.js, ONNX, PyTorch or ML library for the tiny model. The point is that every multiply is visible, readable code. (Test-only numeric helpers are fine.)</li>
 <li><strong>Correctness before animation.</strong> Every mathematical component has unit tests, including a finite-difference gradient check (§8), before any UI is built on it.</li>
 <li><strong>Commit per milestone,</strong> with a short summary. Ask the owner when a requirement is unclear; don't guess.</li>
 <li><strong>Keep a <code>docs/devlog/YYYY-MM-DD.md</code></strong> with what was built, what was verified, and open questions.</li>
+<li><strong>The owner never uses the command line.</strong> Scripts (<code>npm run export</code>, <code>npm run train</code>, tests) are for <em>you</em>. Everything the owner does happens in the app:
+   - <strong>In-app "Data" page:</strong> an "Export corpus from local birds DB" button, with a status and the manifest shown; a "Train new checkpoint" button with progress; and a checkpoint list and picker.
+   - <strong>The app is always available:</strong> install a macOS <strong>LaunchAgent</strong> (<code>~/Library/LaunchAgents/com.gaylon.birds-llm-lab.plist</code>) that serves the built app at a fixed port, <code>http://localhost:5301</code>, restarts on login, and logs to <code>~/Library/Logs/birds-llm-lab.log</code>. After each milestone, rebuild and restart it yourself, so the owner only opens the bookmark.</li>
 </ol>
 <h2>3. Stack</h2>
 <ul>
