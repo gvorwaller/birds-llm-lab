@@ -11,3 +11,5 @@ This repository is currently in the planning stage. Nothing has been built yet.
 The implementation must not connect to production services or include database
 credentials. Its only application data source will be an explicitly exported,
 read-only snapshot from the local `birds_test` database.
+
+Licensed under the [MIT License](LICENSE).

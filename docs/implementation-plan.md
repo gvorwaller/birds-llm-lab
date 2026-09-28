@@ -35,7 +35,7 @@ plan, then record the difference in the devlog.
 ## 2. Binding implementation decisions from plan review
 
 The following decisions are part of the implementation plan, not optional
-suggestions. An explicit owner answer in section 7 may override a decision.
+suggestions. Section 7 records the owner's approved product choices.
 
 1. **Separate the numerical engine from visualization.** The model returns a
    normal output by default and an opt-in `ForwardTrace` for one inspected
@@ -701,27 +701,20 @@ Questions requiring owner decision:
 Never report a check as passing if it was not executed. Distinguish test evidence
 from visual/manual observation.
 
-## 7. Owner decision survey
+## 7. Owner decisions — approved 2026-09-28
 
-The reviewed choices are now adopted by the plan wherever a choice is marked
-`A (plan)`. Implementation proceeds with those choices unless the owner selects
-another option. The license remains undecided and blocks adding a license file.
+These choices are final implementation requirements unless the owner explicitly
+changes one later.
 
-Reply in the compact form `Q1 A, Q2 A, ...` and add words only where an option
-requests them.
-
-| ID | Question | A | B | C |
-|---|---|---|---|---|
-| Q1 | Public-repository license | MIT | No license (current temporary state) | Another license: name it |
-| Q2 | Default Wikipedia training text | **Extracts and sections (plan)** | Extracts only | Another selection: describe it |
-| Q3 | AI-generated field craft | **Export, label, and exclude from default training/demos (plan)** | Do not export it | Include it in default training |
-| Q4 | Supported owner devices | **Current Chrome and Safari at 1024 px+; no phone support (plan)** | Current Chrome only | Include phone support |
-| Q5 | Ready-checkpoint distribution | **GitHub Release asset with hashes; no Git LFS (plan)** | Local generation only | Track it when under 5 MB |
-| Q6 | GPT-2 comparison | **Defer until core Milestones 0–6 are complete (plan)** | Omit it permanently | Include it in the initial build |
-| Q7 | Visual direction | **Distinct laboratory/notebook identity with strong accessibility (plan)** | Visually echo the Birds app | Another direction: describe it |
-
-No response to Q2–Q7 is required to begin: the bold plan selections are binding.
-Q1 may be answered at any time before a license is added.
+| ID | Approved decision |
+|---|---|
+| Q1 | License the public repository under the MIT License. |
+| Q2 | Train on Wikipedia extracts and sections by default. |
+| Q3 | Export and label AI-generated field craft, but exclude it from default training and demos. |
+| Q4 | Support current Chrome and Safari at widths of 1024 px and above; phone support is out of scope. |
+| Q5 | Distribute the ready checkpoint as a GitHub Release asset with hashes; do not use Git LFS. |
+| Q6 | Defer the GPT-2 comparison until core Milestones 0–6 are complete. |
+| Q7 | Use a distinct laboratory/notebook visual identity with strong accessibility. |
 
 ## 8. Definition of project completion
 
