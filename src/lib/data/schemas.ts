@@ -104,6 +104,29 @@ export interface ModelConfig {
   gelu: 'tanh-approximation';
 }
 
+export interface OptimizerConfig {
+  name: 'adamw';
+  beta1: number;
+  beta2: number;
+  epsilon: number;
+  weightDecay: number;
+  gradientClipNorm: number;
+  learningRate: number;
+  warmupSteps: number;
+  totalSteps: number;
+}
+
+export interface CheckpointConfig {
+  formatVersion: 1;
+  model: ModelConfig;
+  optimizer: OptimizerConfig;
+  seed: number;
+  corpusSha256: string;
+  tokenizerSha256: string;
+  trainingStep: number;
+  sourceGitRevision: string | null;
+}
+
 export interface WeightIndexEntry {
   name: string;
   shape: number[];
@@ -567,6 +590,104 @@ export function parseModelConfig(value: unknown): ModelConfig {
   };
 }
 
+function probabilityAt(value: unknown, path: string): number {
+  const number = finiteNumberAt(value, path);
+  if (!(number > 0 && number < 1)) {
+    throw new ArtifactValidationError(path, 'expected a number strictly between 0 and 1');
+  }
+  return number;
+}
+
+function positiveNumberAt(value: unknown, path: string): number {
+  const number = finiteNumberAt(value, path);
+  if (!(number > 0)) throw new ArtifactValidationError(path, 'expected a positive number');
+  return number;
+}
+
+function nonNegativeNumberAt(value: unknown, path: string): number {
+  const number = finiteNumberAt(value, path);
+  if (number < 0) throw new ArtifactValidationError(path, 'expected a non-negative number');
+  return number;
+}
+
+export function parseCheckpointConfig(value: unknown): CheckpointConfig {
+  const checkpoint = objectAt(value, '$');
+  exactKeys(
+    checkpoint,
+    [
+      'formatVersion',
+      'model',
+      'optimizer',
+      'seed',
+      'corpusSha256',
+      'tokenizerSha256',
+      'trainingStep',
+      'sourceGitRevision',
+    ],
+    '$',
+  );
+  const optimizer = objectAt(checkpoint.optimizer, '$.optimizer');
+  exactKeys(
+    optimizer,
+    [
+      'name',
+      'beta1',
+      'beta2',
+      'epsilon',
+      'weightDecay',
+      'gradientClipNorm',
+      'learningRate',
+      'warmupSteps',
+      'totalSteps',
+    ],
+    '$.optimizer',
+  );
+  const warmupSteps = integerAt(optimizer.warmupSteps, '$.optimizer.warmupSteps');
+  const totalSteps = integerAt(optimizer.totalSteps, '$.optimizer.totalSteps', 1);
+  if (warmupSteps > totalSteps) {
+    throw new ArtifactValidationError('$.optimizer', 'warmupSteps must not exceed totalSteps');
+  }
+  const trainingStep = integerAt(checkpoint.trainingStep, '$.trainingStep');
+  if (trainingStep > totalSteps) {
+    throw new ArtifactValidationError('$.trainingStep', 'must not exceed optimizer totalSteps');
+  }
+  const seed = integerAt(checkpoint.seed, '$.seed');
+  if (seed > 0xffff_ffff) {
+    throw new ArtifactValidationError('$.seed', 'expected an unsigned 32-bit integer');
+  }
+  const sourceGitRevision = nullableStringAt(checkpoint.sourceGitRevision, '$.sourceGitRevision');
+  if (sourceGitRevision !== null && !/^[a-f0-9]{40}$/.test(sourceGitRevision)) {
+    throw new ArtifactValidationError(
+      '$.sourceGitRevision',
+      'expected a lowercase 40-character git revision or null',
+    );
+  }
+  const weightDecay = nonNegativeNumberAt(optimizer.weightDecay, '$.optimizer.weightDecay');
+  return {
+    formatVersion: literalAt(checkpoint.formatVersion, 1, '$.formatVersion'),
+    model: parseModelConfig(checkpoint.model),
+    optimizer: {
+      name: literalAt(optimizer.name, 'adamw', '$.optimizer.name'),
+      beta1: probabilityAt(optimizer.beta1, '$.optimizer.beta1'),
+      beta2: probabilityAt(optimizer.beta2, '$.optimizer.beta2'),
+      epsilon: positiveNumberAt(optimizer.epsilon, '$.optimizer.epsilon'),
+      weightDecay,
+      gradientClipNorm: positiveNumberAt(
+        optimizer.gradientClipNorm,
+        '$.optimizer.gradientClipNorm',
+      ),
+      learningRate: positiveNumberAt(optimizer.learningRate, '$.optimizer.learningRate'),
+      warmupSteps,
+      totalSteps,
+    },
+    seed,
+    corpusSha256: sha256At(checkpoint.corpusSha256, '$.corpusSha256'),
+    tokenizerSha256: sha256At(checkpoint.tokenizerSha256, '$.tokenizerSha256'),
+    trainingStep,
+    sourceGitRevision,
+  };
+}
+
 export function parseWeightIndex(value: unknown): WeightIndexArtifact {
   const index = objectAt(value, '$');
   exactKeys(index, ['formatVersion', 'byteLength', 'entries'], '$');
@@ -618,10 +739,10 @@ export function parseTrainingLog(value: unknown): TrainingLogArtifact {
       return {
         step: integerAt(entry.step, `${path}.step`),
         split: enumAt(entry.split, ['train', 'validation'] as const, `${path}.split`),
-        meanLoss: finiteNumberAt(entry.meanLoss, `${path}.meanLoss`),
-        perplexity: finiteNumberAt(entry.perplexity, `${path}.perplexity`),
-        learningRate: finiteNumberAt(entry.learningRate, `${path}.learningRate`),
-        gradientNorm: finiteNumberAt(entry.gradientNorm, `${path}.gradientNorm`),
+        meanLoss: nonNegativeNumberAt(entry.meanLoss, `${path}.meanLoss`),
+        perplexity: positiveNumberAt(entry.perplexity, `${path}.perplexity`),
+        learningRate: nonNegativeNumberAt(entry.learningRate, `${path}.learningRate`),
+        gradientNorm: nonNegativeNumberAt(entry.gradientNorm, `${path}.gradientNorm`),
         elapsedMs: integerAt(entry.elapsedMs, `${path}.elapsedMs`),
         sample: nullableStringAt(entry.sample, `${path}.sample`),
       };

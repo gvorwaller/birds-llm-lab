@@ -3,6 +3,7 @@ import validCorpusRow from '../../../tests/fixtures/corpus-valid.json';
 import { describe, expect, it } from 'vitest';
 import {
   ArtifactValidationError,
+  parseCheckpointConfig,
   parseCorpusManifest,
   parseCorpusRow,
   parseModelConfig,
@@ -127,6 +128,59 @@ describe('artifact schemas', () => {
     expect(config.dModel).toBe(64);
     expect(() => parseModelConfig({ ...config, dHead: 15 })).toThrow(
       'nHeads * dHead must equal dModel',
+    );
+  });
+
+  it('validates the complete checkpoint configuration and optimizer bounds', () => {
+    const model = parseModelConfig({
+      formatVersion: 1,
+      vocabSize: 1024,
+      contextLength: 64,
+      dModel: 64,
+      nLayers: 2,
+      nHeads: 4,
+      dHead: 16,
+      dMlp: 256,
+      tiedEmbeddings: true,
+      useBias: true,
+      layerNormEpsilon: 1e-5,
+      gelu: 'tanh-approximation',
+    });
+    const checkpoint = {
+      formatVersion: 1,
+      model,
+      optimizer: {
+        name: 'adamw',
+        beta1: 0.9,
+        beta2: 0.95,
+        epsilon: 1e-8,
+        weightDecay: 0.1,
+        gradientClipNorm: 1,
+        learningRate: 3e-4,
+        warmupSteps: 10,
+        totalSteps: 100,
+      },
+      seed: 42,
+      corpusSha256: sha256,
+      tokenizerSha256: 'b'.repeat(64),
+      trainingStep: 25,
+      sourceGitRevision: 'c'.repeat(40),
+    };
+    expect(parseCheckpointConfig(checkpoint).trainingStep).toBe(25);
+    expect(() =>
+      parseCheckpointConfig({
+        ...checkpoint,
+        optimizer: { ...checkpoint.optimizer, warmupSteps: 101 },
+      }),
+    ).toThrow('warmupSteps must not exceed totalSteps');
+    expect(() =>
+      parseCheckpointConfig({
+        ...checkpoint,
+        optimizer: { ...checkpoint.optimizer, beta1: 1 },
+      }),
+    ).toThrow('strictly between 0 and 1');
+    expect(() => parseCheckpointConfig({ ...checkpoint, tokenizerSha256: 'not-a-hash' })).toThrow(
+      'SHA-256',
     );
   });
 
