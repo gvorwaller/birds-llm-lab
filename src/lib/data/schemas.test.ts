@@ -84,11 +84,29 @@ describe('artifact schemas', () => {
       specialIds: { bos: 256, eos: 257, pad: 258 },
       targetSize: 260,
       merges: [{ left: 65, right: 66, id: 259, trainingCount: 3 }],
-      tokens: [{ id: 259, bytes: [65, 66], display: 'AB' }],
+      tokens: [
+        ...Array.from({ length: 256 }, (_, id) => ({ id, bytes: [id], display: '' })),
+        { id: 256, bytes: [], display: '<|bos|>' },
+        { id: 257, bytes: [], display: '<|eos|>' },
+        { id: 258, bytes: [], display: '<|pad|>' },
+        { id: 259, bytes: [65, 66], display: 'AB' },
+      ],
       corpusSha256: sha256,
-      trainer: { algorithmVersion: 'bpe-v1', split: 'train' },
+      trainer: {
+        algorithmVersion: 'bpe-v1',
+        split: 'train',
+        templateVersion: 'corpus-v1',
+        documentCount: 2,
+        byteCount: 12,
+      },
     });
     expect(artifact.merges[0].id).toBe(259);
+    expect(() =>
+      parseTokenizerArtifact({
+        ...artifact,
+        tokens: artifact.tokens.slice(0, -1),
+      }),
+    ).toThrow('length must equal targetSize');
   });
 
   it('validates model dimensions', () => {

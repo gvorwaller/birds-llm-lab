@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import DataWorkbench from './components/DataWorkbench.svelte';
+  import TokenizerLab from './components/TokenizerLab.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
   let pathname = $state('/');
@@ -114,6 +115,8 @@
       </a>
     {:else if currentRoute.path === '/data'}
       <DataWorkbench />
+    {:else if currentRoute.path === '/tokenizer'}
+      <TokenizerLab />
     {:else}
       <section class="placeholder" aria-labelledby="placeholder-title">
         <div>

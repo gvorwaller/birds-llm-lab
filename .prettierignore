@@ -3,6 +3,7 @@ node_modules/
 coverage/
 /data/
 /checkpoints/
+src/assets/tokenizer-*.json
 docs/plan.html
 docs/plan.md
 docs/implementation-plan.md

@@ -83,6 +83,9 @@ export interface TokenizerArtifact {
   trainer: {
     algorithmVersion: 'bpe-v1';
     split: 'train';
+    templateVersion: 'corpus-v1';
+    documentCount: number;
+    byteCount: number;
   };
 }
 
@@ -421,9 +424,13 @@ export function parseTokenizerArtifact(value: unknown): TokenizerArtifact {
   const specialIds = objectAt(artifact.specialIds, '$.specialIds');
   exactKeys(specialIds, ['bos', 'eos', 'pad'], '$.specialIds');
   const trainer = objectAt(artifact.trainer, '$.trainer');
-  exactKeys(trainer, ['algorithmVersion', 'split'], '$.trainer');
+  exactKeys(
+    trainer,
+    ['algorithmVersion', 'split', 'templateVersion', 'documentCount', 'byteCount'],
+    '$.trainer',
+  );
 
-  return {
+  const parsed: TokenizerArtifact = {
     formatVersion: literalAt(artifact.formatVersion, 1, '$.formatVersion'),
     specialIds: {
       bos: literalAt(specialIds.bos, 256, '$.specialIds.bos'),
@@ -459,8 +466,66 @@ export function parseTokenizerArtifact(value: unknown): TokenizerArtifact {
     trainer: {
       algorithmVersion: literalAt(trainer.algorithmVersion, 'bpe-v1', '$.trainer.algorithmVersion'),
       split: literalAt(trainer.split, 'train', '$.trainer.split'),
+      templateVersion: literalAt(trainer.templateVersion, 'corpus-v1', '$.trainer.templateVersion'),
+      documentCount: integerAt(trainer.documentCount, '$.trainer.documentCount'),
+      byteCount: integerAt(trainer.byteCount, '$.trainer.byteCount'),
     },
   };
+
+  if (parsed.tokens.length !== parsed.targetSize) {
+    throw new ArtifactValidationError('$.tokens', 'length must equal targetSize');
+  }
+  if (parsed.merges.length !== parsed.targetSize - 259) {
+    throw new ArtifactValidationError(
+      '$.merges',
+      'length must equal targetSize minus 259 base and special tokens',
+    );
+  }
+  for (const [id, token] of parsed.tokens.entries()) {
+    if (token.id !== id) {
+      throw new ArtifactValidationError(`$.tokens[${id}].id`, `expected sequential id ${id}`);
+    }
+    if (id < 256 && (token.bytes.length !== 1 || token.bytes[0] !== id)) {
+      throw new ArtifactValidationError(
+        `$.tokens[${id}].bytes`,
+        'byte-token bytes must contain exactly its id',
+      );
+    }
+    if (id >= 256 && id <= 258 && token.bytes.length !== 0) {
+      throw new ArtifactValidationError(
+        `$.tokens[${id}].bytes`,
+        'special tokens must not contain ordinary bytes',
+      );
+    }
+  }
+  for (const [rank, merge] of parsed.merges.entries()) {
+    const expectedId = 259 + rank;
+    if (merge.id !== expectedId) {
+      throw new ArtifactValidationError(`$.merges[${rank}].id`, `expected ${expectedId}`);
+    }
+    if (
+      merge.left >= merge.id ||
+      merge.right >= merge.id ||
+      (merge.left >= 256 && merge.left <= 258) ||
+      (merge.right >= 256 && merge.right <= 258)
+    ) {
+      throw new ArtifactValidationError(
+        `$.merges[${rank}]`,
+        'operands must be earlier ordinary or learned tokens',
+      );
+    }
+    const expectedBytes = [...parsed.tokens[merge.left].bytes, ...parsed.tokens[merge.right].bytes];
+    if (
+      expectedBytes.length !== parsed.tokens[merge.id].bytes.length ||
+      expectedBytes.some((byte, index) => byte !== parsed.tokens[merge.id].bytes[index])
+    ) {
+      throw new ArtifactValidationError(
+        `$.tokens[${merge.id}].bytes`,
+        'learned-token bytes must concatenate its merge operands',
+      );
+    }
+  }
+  return parsed;
 }
 
 export function parseModelConfig(value: unknown): ModelConfig {

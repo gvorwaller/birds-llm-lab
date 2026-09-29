@@ -310,6 +310,320 @@ h1 {
   font-size: 2rem;
 }
 
+.tokenizer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 1.25rem;
+  max-width: 1180px;
+  margin-top: 4rem;
+}
+
+.lab-panel {
+  min-width: 0;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+}
+
+.token-input-panel,
+.vocabulary-panel {
+  grid-column: 1 / -1;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.panel-heading .eyebrow,
+.explanation-panel .eyebrow {
+  margin-bottom: 0.45rem;
+}
+
+.panel-heading h2,
+.explanation-panel h2 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.artifact-switcher {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+}
+
+.artifact-switcher legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.artifact-switcher button,
+.replay-controls button,
+.lab-panel button {
+  border: 1px solid var(--line-strong);
+  cursor: pointer;
+}
+
+.artifact-switcher button {
+  padding: 0.55rem 0.7rem;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.78rem;
+}
+
+.artifact-switcher button.active {
+  border-color: var(--forest);
+  color: #fff;
+  background: var(--forest-deep);
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lab-panel textarea,
+.lab-panel input[type='text'],
+.lab-panel input[type='search'],
+#replay-input {
+  width: 100%;
+  padding: 0.8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font:
+    0.92rem/1.55 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.lab-panel textarea:focus,
+.lab-panel input:focus {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.token-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1.5rem;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.token-stats strong {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.token-stats .verified {
+  color: var(--forest);
+  font-weight: 800;
+}
+
+.token-strip {
+  display: flex;
+  min-height: 76px;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border: 1px dashed var(--line-strong);
+  background: color-mix(in srgb, var(--paper) 85%, var(--lichen));
+}
+
+.replay-strip {
+  margin-top: 1.25rem;
+}
+
+.token-chip {
+  display: inline-flex;
+  min-width: 48px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.42rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  background: var(--paper-raised);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.token-chip.learned {
+  border-color: var(--forest);
+  background: color-mix(in srgb, var(--paper-raised) 75%, var(--lichen));
+}
+
+.token-chip.special {
+  border-color: var(--signal);
+}
+
+.token-chip strong {
+  max-width: 180px;
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-chip small {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.empty-state,
+.footnote,
+.artifact-proof {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.footnote {
+  margin: 0.8rem 0 0;
+}
+
+.step-counter,
+.merge-rank {
+  color: var(--signal);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.replay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.replay-controls button {
+  padding: 0.65rem 0.8rem;
+}
+
+.lab-panel button.primary {
+  color: #fff;
+  background: var(--forest-deep);
+}
+
+.lab-panel button.secondary {
+  color: var(--ink);
+  background: transparent;
+}
+
+.lab-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.merge-explanation {
+  min-height: 112px;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-left: 3px solid var(--signal);
+  background: var(--paper);
+}
+
+.merge-explanation p,
+.explanation-panel p {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.65;
+}
+
+.vocabulary-panel input {
+  max-width: 520px;
+}
+
+.table-scroll {
+  max-height: 500px;
+  margin-top: 1rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+}
+
+.table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.table-scroll th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  color: var(--sidebar-ink);
+  background: var(--sidebar);
+  text-align: left;
+}
+
+.table-scroll th,
+.table-scroll td {
+  padding: 0.58rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.table-scroll td:nth-child(2) {
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+
+.explanation-panel details {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.explanation-panel summary {
+  cursor: pointer;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.05rem;
+}
+
+@media (max-width: 1200px) {
+  main {
+    padding-right: 3rem;
+    padding-left: 4rem;
+  }
+
+  .tokenizer-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .token-input-panel,
+  .vocabulary-panel {
+    grid-column: auto;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #ebeee5;

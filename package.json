@@ -8,13 +8,18 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5301",
+    "preview": "vite preview --host 127.0.0.1 --port 5301",
     "check": "svelte-check --tsconfig ./tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest",
     "test:run": "vitest run",
+    "pretest:browser": "npm run build",
+    "test:browser": "playwright test",
     "build": "vite build",
     "verify:m0": "tsx scripts/verify-m0.ts",
+    "verify:m1": "tsx scripts/verify-m1.ts",
+    "benchmark:tokenizer": "tsx scripts/benchmark-tokenizer.ts",
     "export": "tsx scripts/export-corpus.ts",
     "train:tokenizer": "tsx scripts/train-tokenizer.ts",
     "train": "tsx scripts/train.ts",
@@ -30,6 +35,7 @@
     "svelte": "5.57.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@types/node": "26.6.3",
     "@types/pg": "^8.23.1",
