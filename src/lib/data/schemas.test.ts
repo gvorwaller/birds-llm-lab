@@ -170,9 +170,9 @@ describe('artifact schemas', () => {
     expect(() =>
       parseCheckpointConfig({
         ...checkpoint,
-        optimizer: { ...checkpoint.optimizer, warmupSteps: 101 },
+        optimizer: { ...checkpoint.optimizer, warmupSteps: 100 },
       }),
-    ).toThrow('warmupSteps must not exceed totalSteps');
+    ).toThrow('warmupSteps must be smaller than totalSteps');
     expect(() =>
       parseCheckpointConfig({
         ...checkpoint,

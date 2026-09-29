@@ -644,8 +644,8 @@ export function parseCheckpointConfig(value: unknown): CheckpointConfig {
   );
   const warmupSteps = integerAt(optimizer.warmupSteps, '$.optimizer.warmupSteps');
   const totalSteps = integerAt(optimizer.totalSteps, '$.optimizer.totalSteps', 1);
-  if (warmupSteps > totalSteps) {
-    throw new ArtifactValidationError('$.optimizer', 'warmupSteps must not exceed totalSteps');
+  if (warmupSteps >= totalSteps) {
+    throw new ArtifactValidationError('$.optimizer', 'warmupSteps must be smaller than totalSteps');
   }
   const trainingStep = integerAt(checkpoint.trainingStep, '$.trainingStep');
   if (trainingStep > totalSteps) {
