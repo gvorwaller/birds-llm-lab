@@ -145,6 +145,7 @@ export interface WeightIndexArtifact {
 export interface TrainingLogEntry {
   step: number;
   split: 'train' | 'validation';
+  predictionCount: number;
   meanLoss: number;
   perplexity: number;
   learningRate: number;
@@ -727,6 +728,7 @@ export function parseTrainingLog(value: unknown): TrainingLogArtifact {
         [
           'step',
           'split',
+          'predictionCount',
           'meanLoss',
           'perplexity',
           'learningRate',
@@ -739,6 +741,7 @@ export function parseTrainingLog(value: unknown): TrainingLogArtifact {
       return {
         step: integerAt(entry.step, `${path}.step`),
         split: enumAt(entry.split, ['train', 'validation'] as const, `${path}.split`),
+        predictionCount: integerAt(entry.predictionCount, `${path}.predictionCount`, 1),
         meanLoss: nonNegativeNumberAt(entry.meanLoss, `${path}.meanLoss`),
         perplexity: positiveNumberAt(entry.perplexity, `${path}.perplexity`),
         learningRate: nonNegativeNumberAt(entry.learningRate, `${path}.learningRate`),

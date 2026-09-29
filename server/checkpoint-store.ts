@@ -15,12 +15,14 @@ import {
   encodeCheckpointWeights,
 } from '../src/lib/model/checkpoint';
 import type { ParameterRegistry } from '../src/lib/model/parameters';
+import { parseTrainerState, serializeTrainerState, type TrainerResumeState } from './trainer-state';
 
 const CHECKPOINT_FILES = {
   config: 'config.json',
   weights: 'weights.bin',
   weightIndex: 'weights.index.json',
   trainingLog: 'training-log.json',
+  trainerState: 'trainer-state.json',
 } as const;
 
 export interface LoadedCheckpoint {
@@ -28,6 +30,7 @@ export interface LoadedCheckpoint {
   readonly parameters: ParameterRegistry;
   readonly weightIndex: WeightIndexArtifact;
   readonly trainingLog: TrainingLogArtifact;
+  readonly resumeState: TrainerResumeState | null;
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -63,18 +66,28 @@ function validateLog(config: CheckpointConfig, log: TrainingLogArtifact): void {
 
 export async function loadCheckpoint(directoryInput: string): Promise<LoadedCheckpoint> {
   const directory = resolve(directoryInput);
-  const [configValue, weightIndexValue, trainingLogValue, weights] = await Promise.all([
-    readJson(join(directory, CHECKPOINT_FILES.config)),
-    readJson(join(directory, CHECKPOINT_FILES.weightIndex)),
-    readJson(join(directory, CHECKPOINT_FILES.trainingLog)),
-    readFile(join(directory, CHECKPOINT_FILES.weights)),
-  ]);
+  const trainerStatePath = join(directory, CHECKPOINT_FILES.trainerState);
+  const [configValue, weightIndexValue, trainingLogValue, weights, trainerStateValue] =
+    await Promise.all([
+      readJson(join(directory, CHECKPOINT_FILES.config)),
+      readJson(join(directory, CHECKPOINT_FILES.weightIndex)),
+      readJson(join(directory, CHECKPOINT_FILES.trainingLog)),
+      readFile(join(directory, CHECKPOINT_FILES.weights)),
+      pathExists(trainerStatePath).then((exists) => (exists ? readJson(trainerStatePath) : null)),
+    ]);
   const config = parseCheckpointConfig(configValue);
   const trainingLog = parseTrainingLog(trainingLogValue);
   validateLog(config, trainingLog);
   const weightIndex = parseWeightIndex(weightIndexValue);
   const parameters = decodeCheckpointWeights(config.model, weightIndex, weights);
-  return { config, parameters, weightIndex, trainingLog };
+  const resumeState =
+    trainerStateValue === null ? null : parseTrainerState(trainerStateValue, parameters);
+  if (resumeState !== null && resumeState.optimizer.step !== config.trainingStep) {
+    throw new CheckpointValidationError(
+      `trainer-state.json optimizer step ${resumeState.optimizer.step} does not match checkpoint step ${config.trainingStep}.`,
+    );
+  }
+  return { config, parameters, weightIndex, trainingLog, resumeState };
 }
 
 export async function writeCheckpoint(
@@ -82,6 +95,7 @@ export async function writeCheckpoint(
   configInput: CheckpointConfig,
   parameters: ParameterRegistry,
   trainingLogInput: TrainingLogArtifact,
+  resumeState: TrainerResumeState | null = null,
 ): Promise<LoadedCheckpoint> {
   const destination = resolve(destinationInput);
   const config = parseCheckpointConfig(configInput);
@@ -113,6 +127,15 @@ export async function writeCheckpoint(
         flag: 'wx',
         mode: 0o600,
       }),
+      ...(resumeState === null
+        ? []
+        : [
+            writeFile(
+              join(temporary, CHECKPOINT_FILES.trainerState),
+              serializeStableJson(serializeTrainerState(resumeState)),
+              { flag: 'wx', mode: 0o600 },
+            ),
+          ]),
     ]);
     const validated = await loadCheckpoint(temporary);
     await rename(temporary, destination);

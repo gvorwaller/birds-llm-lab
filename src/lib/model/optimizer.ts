@@ -28,6 +28,11 @@ export interface AdamWMomentSnapshot {
   readonly second: Float32Array;
 }
 
+export interface AdamWSnapshot {
+  readonly step: number;
+  readonly moments: AdamWMomentSnapshot[];
+}
+
 interface AdamWMoments {
   readonly first: Float32Array;
   readonly second: Float32Array;
@@ -153,7 +158,44 @@ export class AdamWOptimizer {
     return this.step(registry, learningRate);
   }
 
-  snapshot(): { step: number; moments: AdamWMomentSnapshot[] } {
+  restore(snapshot: AdamWSnapshot, registry: ParameterRegistry): void {
+    if (!Number.isInteger(snapshot.step) || snapshot.step < 0) {
+      throw new Error('AdamW snapshot step must be a non-negative integer.');
+    }
+    const expected = new Map(registry.entries().map((parameter) => [parameter.name, parameter]));
+    const restored = new Map<string, AdamWMoments>();
+    for (const moment of snapshot.moments) {
+      const parameter = expected.get(moment.name);
+      if (!parameter) throw new Error(`AdamW snapshot contains unknown parameter ${moment.name}.`);
+      if (restored.has(moment.name)) {
+        throw new Error(`AdamW snapshot repeats parameter ${moment.name}.`);
+      }
+      if (
+        moment.first.length !== parameter.value.data.length ||
+        moment.second.length !== parameter.value.data.length
+      ) {
+        throw new Error(`AdamW snapshot shape mismatch for ${moment.name}.`);
+      }
+      assertFinite(moment.first, `${moment.name} first moment`);
+      assertFinite(moment.second, `${moment.name} second moment`);
+      restored.set(moment.name, {
+        first: moment.first.slice(),
+        second: moment.second.slice(),
+      });
+    }
+    if (snapshot.step > 0) {
+      for (const name of expected.keys()) {
+        if (!restored.has(name)) throw new Error(`AdamW snapshot is missing parameter ${name}.`);
+      }
+    } else if (restored.size > 0) {
+      throw new Error('AdamW step-zero snapshot must not contain moments.');
+    }
+    this.moments.clear();
+    for (const [name, moments] of restored) this.moments.set(name, moments);
+    this.completedSteps = snapshot.step;
+  }
+
+  snapshot(): AdamWSnapshot {
     return {
       step: this.completedSteps,
       moments: [...this.moments.entries()].map(([name, state]) => ({

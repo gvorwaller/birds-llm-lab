@@ -5,8 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckpointConfig, TrainingLogArtifact } from '../src/lib/data/schemas';
 import { DEFAULT_MODEL_CONFIG } from '../src/lib/model/config';
 import { encodeCheckpointWeights } from '../src/lib/model/checkpoint';
+import { SeededRandom } from '../src/lib/math/rng';
+import { AdamWOptimizer } from '../src/lib/model/optimizer';
 import { initializeParameters } from '../src/lib/model/parameters';
 import { loadCheckpoint, writeCheckpoint } from './checkpoint-store';
+import type { TrainerResumeState } from './trainer-state';
 
 const temporaryDirectories: string[] = [];
 
@@ -47,6 +50,7 @@ const trainingLog: TrainingLogArtifact = {
     {
       step: 3,
       split: 'train',
+      predictionCount: 512,
       meanLoss: 5.5,
       perplexity: Math.exp(5.5),
       learningRate: 3e-4,
@@ -56,6 +60,20 @@ const trainingLog: TrainingLogArtifact = {
     },
   ],
 };
+
+function resumeState(): TrainerResumeState {
+  const parameters = initializeParameters(DEFAULT_MODEL_CONFIG, config.seed);
+  const optimizer = new AdamWOptimizer(config.optimizer);
+  for (let step = 0; step < config.trainingStep; step += 1) {
+    for (const parameter of parameters) parameter.gradient.data.fill((step + 1) * 1e-4);
+    optimizer.step(parameters, config.optimizer.learningRate);
+  }
+  return {
+    optimizer: optimizer.snapshot(),
+    samplingRandom: new SeededRandom(123).snapshot(),
+    dataOrder: { epoch: 2, cursor: 17 },
+  };
+}
 
 describe('checkpoint directory store', () => {
   it('writes to a validated temporary sibling and atomically installs a round-trippable checkpoint', async () => {
@@ -96,6 +114,46 @@ describe('checkpoint directory store', () => {
       ),
     ).rejects.toThrow('Refusing to replace');
     expect(await readFile(join(destination, 'keep.txt'), 'utf8')).toBe('keep');
+  });
+
+  it('round-trips resumable optimizer, RNG, and data-order state', async () => {
+    const parent = await temporaryDirectory();
+    const destination = join(parent, 'resumable');
+    const state = resumeState();
+    const loaded = await writeCheckpoint(
+      destination,
+      config,
+      initializeParameters(DEFAULT_MODEL_CONFIG, config.seed),
+      trainingLog,
+      state,
+    );
+    expect((await readdir(destination)).sort()).toEqual([
+      'config.json',
+      'trainer-state.json',
+      'training-log.json',
+      'weights.bin',
+      'weights.index.json',
+    ]);
+    expect(loaded.resumeState).toEqual(state);
+  });
+
+  it('rejects resumable state whose optimizer step disagrees with the checkpoint', async () => {
+    const parent = await temporaryDirectory();
+    const destination = join(parent, 'bad-resume-step');
+    await writeCheckpoint(
+      destination,
+      config,
+      initializeParameters(DEFAULT_MODEL_CONFIG, config.seed),
+      trainingLog,
+      resumeState(),
+    );
+    const statePath = join(destination, 'trainer-state.json');
+    const state = JSON.parse(await readFile(statePath, 'utf8')) as {
+      optimizer: { step: number };
+    };
+    state.optimizer.step += 1;
+    await writeFile(statePath, JSON.stringify(state));
+    await expect(loadCheckpoint(destination)).rejects.toThrow('does not match checkpoint step');
   });
 
   it('leaves no destination or temporary directory when validation fails', async () => {

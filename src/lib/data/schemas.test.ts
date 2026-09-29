@@ -205,6 +205,7 @@ describe('artifact schemas', () => {
         {
           step: 0,
           split: 'train',
+          predictionCount: 512,
           meanLoss: 6.9,
           perplexity: 992,
           learningRate: 0,

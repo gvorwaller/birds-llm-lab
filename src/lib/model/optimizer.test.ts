@@ -71,4 +71,43 @@ describe('AdamW optimizer', () => {
     };
     expect(makeRun()).toEqual(makeRun());
   });
+
+  it('restores moments and step count for an identical resumed update', () => {
+    const createRegistry = () => {
+      const registry = new ParameterRegistry(specs, null);
+      registry.setValues('linear.weight', [0.25, -0.75]);
+      registry.setValues('linear.bias', [0.1]);
+      return registry;
+    };
+    const hyperparameters = {
+      beta1: 0.9,
+      beta2: 0.95,
+      epsilon: 1e-8,
+      weightDecay: 0.1,
+      gradientClipNorm: 1,
+    };
+    const uninterruptedRegistry = createRegistry();
+    const uninterrupted = new AdamWOptimizer(hyperparameters);
+    uninterruptedRegistry.get('linear.weight').gradient.data.set([0.2, -0.4]);
+    uninterruptedRegistry.get('linear.bias').gradient.data.set([0.05]);
+    uninterrupted.step(uninterruptedRegistry, 1e-3);
+
+    const resumedRegistry = createRegistry();
+    for (const parameter of uninterruptedRegistry) {
+      resumedRegistry.setValues(parameter.name, parameter.value.data);
+    }
+    const resumed = new AdamWOptimizer(hyperparameters);
+    resumed.restore(uninterrupted.snapshot(), resumedRegistry);
+
+    for (const registry of [uninterruptedRegistry, resumedRegistry]) {
+      registry.get('linear.weight').gradient.data.set([1.2, 0.3]);
+      registry.get('linear.bias').gradient.data.set([-0.1]);
+    }
+    uninterrupted.step(uninterruptedRegistry, 8e-4);
+    resumed.step(resumedRegistry, 8e-4);
+    expect(resumed.snapshot()).toEqual(uninterrupted.snapshot());
+    expect(resumedRegistry.entries().map(({ value }) => Array.from(value.data))).toEqual(
+      uninterruptedRegistry.entries().map(({ value }) => Array.from(value.data)),
+    );
+  });
 });
