@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import DataWorkbench from './components/DataWorkbench.svelte';
+  import CheckpointPicker from './components/CheckpointPicker.svelte';
   import TokenizerLab from './components/TokenizerLab.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
@@ -68,6 +69,8 @@
         </a>
       {/each}
     </nav>
+
+    <CheckpointPicker />
 
     <div class="sidebar-note">
       <span class="note-index">01</span>

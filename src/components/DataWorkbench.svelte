@@ -1,26 +1,48 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { ExportJobState, ServiceStatus } from '../lib/data/api-types';
+  import type {
+    ExportJobState,
+    ServiceStatus,
+    TrainingJobState,
+    TrainingPresetId,
+  } from '../lib/data/api-types';
   import {
     cancelExportJob,
+    cancelTrainingJob,
+    getCheckpoints,
     getCorpusManifest,
     getExportJob,
     getServiceStatus,
+    getTrainingJob,
+    selectCheckpoint,
     startCorpusExport,
+    startTraining,
   } from '../lib/data/api';
   import type { CorpusManifest } from '../lib/data/schemas';
+  import { checkpointCatalog } from '../lib/stores/checkpoints';
 
   let service = $state<ServiceStatus | null>(null);
   let manifest = $state<CorpusManifest | null>(null);
   let job = $state<ExportJobState | null>(null);
+  let trainingJob = $state<TrainingJobState | null>(null);
+  let trainingPreset = $state<TrainingPresetId>('quick');
   let busy = $state(true);
   let error = $state<string | null>(null);
-  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let exportPollTimer: ReturnType<typeof setTimeout> | undefined;
+  let trainingPollTimer: ReturnType<typeof setTimeout> | undefined;
 
   const active = $derived(job !== null && ['queued', 'running', 'cancelling'].includes(job.status));
+  const trainingActive = $derived(
+    trainingJob !== null && ['queued', 'running', 'cancelling'].includes(trainingJob.status),
+  );
   const progressValue = $derived(
     job?.progress.totalRows && job.progress.totalRows > 0
       ? Math.min(100, (job.progress.processedRows / job.progress.totalRows) * 100)
+      : 0,
+  );
+  const trainingProgress = $derived(
+    trainingJob && trainingJob.progress.totalSteps > 0
+      ? Math.min(100, (trainingJob.progress.step / trainingJob.progress.totalSteps) * 100)
       : 0,
   );
 
@@ -30,8 +52,26 @@
 
   function schedulePoll(): void {
     if (!active) return;
-    clearTimeout(pollTimer);
-    pollTimer = setTimeout(() => void refreshJob(), 350);
+    clearTimeout(exportPollTimer);
+    exportPollTimer = setTimeout(() => void refreshJob(), 350);
+  }
+
+  function scheduleTrainingPoll(): void {
+    if (!trainingActive) return;
+    clearTimeout(trainingPollTimer);
+    trainingPollTimer = setTimeout(() => void refreshTrainingJob(), 500);
+  }
+
+  async function refreshTrainingJob(): Promise<void> {
+    if (!trainingJob) return;
+    try {
+      trainingJob = await getTrainingJob(trainingJob.id);
+      if (trainingJob.status === 'succeeded') checkpointCatalog.set(await getCheckpoints());
+    } catch (cause) {
+      error = message(cause);
+    } finally {
+      scheduleTrainingPoll();
+    }
   }
 
   async function refreshJob(): Promise<void> {
@@ -55,14 +95,50 @@
     try {
       service = await getServiceStatus();
       manifest = await getCorpusManifest();
+      checkpointCatalog.set(await getCheckpoints());
       if (service.latestExportJobId) {
         job = await getExportJob(service.latestExportJobId);
         schedulePoll();
+      }
+      if (service.latestTrainingJobId) {
+        trainingJob = await getTrainingJob(service.latestTrainingJobId);
+        scheduleTrainingPoll();
       }
     } catch (cause) {
       error = message(cause);
     } finally {
       busy = false;
+    }
+  }
+
+  async function startTrainingJob(): Promise<void> {
+    error = null;
+    try {
+      trainingJob = await startTraining(trainingPreset);
+      scheduleTrainingPoll();
+    } catch (cause) {
+      error = message(cause);
+      await load();
+    }
+  }
+
+  async function cancelTraining(): Promise<void> {
+    if (!trainingJob) return;
+    error = null;
+    try {
+      trainingJob = await cancelTrainingJob(trainingJob.id);
+      scheduleTrainingPoll();
+    } catch (cause) {
+      error = message(cause);
+    }
+  }
+
+  async function activateCheckpoint(id: string): Promise<void> {
+    error = null;
+    try {
+      checkpointCatalog.set(await selectCheckpoint(id));
+    } catch (cause) {
+      error = message(cause);
     }
   }
 
@@ -96,9 +172,19 @@
     return `${(value / 1_000_000).toFixed(2)} MB`;
   }
 
+  function formatDuration(value: number | null): string {
+    if (value === null) return 'Calculating…';
+    const seconds = Math.max(0, Math.round(value / 1_000));
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ${seconds % 60}s`;
+  }
+
   onMount(() => {
     void load();
-    return () => clearTimeout(pollTimer);
+    return () => {
+      clearTimeout(exportPollTimer);
+      clearTimeout(trainingPollTimer);
+    };
   });
 </script>
 
@@ -236,20 +322,148 @@
   {/if}
 </section>
 
-<section class="workbench future" aria-labelledby="training-heading">
+<section class="workbench" aria-labelledby="training-heading">
   <div class="section-heading">
     <div>
-      <p class="eyebrow">Milestone 2</p>
+      <p class="eyebrow">From-scratch transformer</p>
       <h2 id="training-heading">Training & checkpoints</h2>
     </div>
-    <span class="service-state">Not available yet</span>
+    <span class:online={!trainingActive} class="service-state">
+      {trainingActive ? trainingJob?.status : 'Ready'}
+    </span>
   </div>
   <p class="explanation">
-    The controls are intentionally disabled until the from-scratch model, optimizer, and checkpoint
-    validators pass their mathematical gates. This page will remain the owner-facing control
-    surface.
+    Train with one of two bounded presets. The quick run proves the complete workflow; the ready run
+    uses the verified 2,000-step schedule. Only atomically completed, validated checkpoints appear
+    below.
   </p>
-  <button class="secondary" disabled>Train new checkpoint</button>
+
+  {#if $checkpointCatalog.recoveryWarning}
+    <p class="notice warning" role="status">{$checkpointCatalog.recoveryWarning}</p>
+  {/if}
+
+  <div class="training-controls">
+    <label>
+      <span class="control-label">Training preset</span>
+      <select bind:value={trainingPreset} disabled={trainingActive}>
+        <option value="quick">Quick proof · 100 steps</option>
+        <option value="ready">Ready model · 2,000 steps</option>
+      </select>
+    </label>
+    <button
+      class="primary"
+      disabled={busy || trainingActive}
+      onclick={() => void startTrainingJob()}
+    >
+      {trainingActive ? 'Training in progress…' : 'Train new checkpoint'}
+    </button>
+    {#if trainingActive}
+      <button
+        class="secondary"
+        disabled={trainingJob?.status === 'cancelling'}
+        onclick={() => void cancelTraining()}
+      >
+        {trainingJob?.status === 'cancelling' ? 'Cancelling safely…' : 'Cancel safely'}
+      </button>
+    {/if}
+  </div>
+
+  {#if trainingJob}
+    <div class="job-panel training-job" aria-live="polite">
+      <div class="job-line">
+        <strong>Latest training · {trainingJob.preset}</strong>
+        <span class:failed={['failed', 'interrupted'].includes(trainingJob.status)}
+          >{trainingJob.status}</span
+        >
+      </div>
+      <div
+        class="progress-track"
+        role="progressbar"
+        aria-label="Model training progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={Math.round(trainingProgress)}
+      >
+        <span style:width={`${trainingProgress}%`}></span>
+      </div>
+      <dl class="training-metrics">
+        <div>
+          <dt>Step</dt>
+          <dd>{trainingJob.progress.step} / {trainingJob.progress.totalSteps}</dd>
+        </div>
+        <div>
+          <dt>Train loss</dt>
+          <dd>{trainingJob.progress.trainLoss?.toFixed(4) ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>Validation loss</dt>
+          <dd>{trainingJob.progress.validationLoss?.toFixed(4) ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>Learning rate</dt>
+          <dd>{trainingJob.progress.learningRate.toExponential(2)}</dd>
+        </div>
+        <div>
+          <dt>Elapsed</dt>
+          <dd>{formatDuration(trainingJob.progress.elapsedMs)}</dd>
+        </div>
+        <div>
+          <dt>Estimated left</dt>
+          <dd>{formatDuration(trainingJob.progress.estimatedRemainingMs)}</dd>
+        </div>
+      </dl>
+      <p class="job-detail">
+        Cancellation: {trainingJob.status === 'cancelling'
+          ? 'requested'
+          : trainingActive
+            ? 'available between optimizer steps'
+            : 'not active'}
+      </p>
+      {#if trainingJob.progress.latestSample}
+        <div class="sample">
+          <span>Latest seeded sample</span>
+          <pre>{trainingJob.progress.latestSample}</pre>
+        </div>
+      {/if}
+      {#if trainingJob.error}<p class="job-error">{trainingJob.error}</p>{/if}
+    </div>
+  {/if}
+
+  <div class="checkpoint-heading">
+    <h3>Validated checkpoints</h3>
+    <span>{$checkpointCatalog.checkpoints.length} available</span>
+  </div>
+  {#if $checkpointCatalog.checkpoints.length === 0}
+    <p class="empty-state">No validated checkpoint is available yet.</p>
+  {:else}
+    <div class="checkpoint-list">
+      {#each $checkpointCatalog.checkpoints as checkpoint}
+        <article class:active-checkpoint={$checkpointCatalog.activeCheckpointId === checkpoint.id}>
+          <div>
+            <strong>{checkpoint.id}</strong>
+            <small>step {checkpoint.trainingStep} / {checkpoint.totalSteps}</small>
+          </div>
+          <dl>
+            <div>
+              <dt>Train loss</dt>
+              <dd>{checkpoint.finalTrainLoss?.toFixed(4) ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>Validation</dt>
+              <dd>{checkpoint.finalValidationLoss?.toFixed(4) ?? '—'}</dd>
+            </div>
+          </dl>
+          <button
+            class="secondary"
+            disabled={$checkpointCatalog.activeCheckpointId === checkpoint.id}
+            onclick={() => void activateCheckpoint(checkpoint.id)}
+          >
+            {$checkpointCatalog.activeCheckpointId === checkpoint.id ? 'Active' : 'Use checkpoint'}
+          </button>
+        </article>
+      {/each}
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -433,8 +647,156 @@
     border-top: 1px solid var(--line);
   }
 
-  .future {
-    margin-bottom: 4rem;
-    border-style: dashed;
+  .training-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+
+  .training-controls label {
+    min-width: 240px;
+  }
+
+  .control-label {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  select {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.6rem;
+    border: 1px solid var(--line-strong);
+    color: var(--ink);
+    background: var(--paper);
+  }
+
+  .training-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    margin: 1rem 0;
+    background: var(--line);
+  }
+
+  .training-metrics div {
+    min-width: 0;
+    padding: 0.75rem;
+    background: var(--paper);
+  }
+
+  .training-metrics dd {
+    overflow-wrap: anywhere;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+  }
+
+  .sample {
+    margin-top: 1rem;
+    padding: 0.8rem;
+    border-left: 3px solid var(--lichen);
+    background: var(--paper);
+  }
+
+  .sample span {
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .sample pre {
+    margin: 0.6rem 0 0;
+    overflow: auto;
+    white-space: pre-wrap;
+    font:
+      0.78rem/1.5 ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+  }
+
+  .checkpoint-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .checkpoint-heading h3 {
+    margin: 0;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.35rem;
+    font-weight: 500;
+  }
+
+  .checkpoint-heading span {
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  .checkpoint-list {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 1rem;
+  }
+
+  .checkpoint-list article {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem;
+    border: 1px solid var(--line);
+    background: var(--paper);
+  }
+
+  .checkpoint-list article.active-checkpoint {
+    border-color: var(--forest);
+    box-shadow: inset 4px 0 var(--forest);
+  }
+
+  .checkpoint-list strong,
+  .checkpoint-list small {
+    display: block;
+  }
+
+  .checkpoint-list small {
+    margin-top: 0.25rem;
+    color: var(--muted);
+  }
+
+  .checkpoint-list dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+  }
+
+  .checkpoint-list dd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+  }
+
+  @media (max-width: 1150px) {
+    .checkpoint-list article {
+      grid-template-columns: 1fr auto;
+    }
+
+    .checkpoint-list dl {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
   }
 </style>

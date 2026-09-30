@@ -41,6 +41,7 @@ export interface TrainerOptions {
   readonly seed?: number;
   readonly batchSize?: number;
   readonly sourceGitRevision?: string | null;
+  readonly signal?: AbortSignal;
   readonly onProgress?: (entry: TrainingLogEntry) => void;
 }
 
@@ -53,6 +54,17 @@ export interface TrainerResult {
 interface Evaluation {
   readonly meanLoss: number;
   readonly predictionCount: number;
+}
+
+export class TrainingCancelledError extends Error {
+  constructor() {
+    super('Training cancelled safely.');
+    this.name = 'TrainingCancelledError';
+  }
+}
+
+function throwIfCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new TrainingCancelledError();
 }
 
 function positiveInteger(value: number, name: string): number {
@@ -96,6 +108,7 @@ async function evaluate(
   batchSize: number,
   batches: number,
   seed: number,
+  signal?: AbortSignal,
 ): Promise<Evaluation> {
   const stream = new DeterministicBatchStream(
     dataset,
@@ -107,6 +120,7 @@ async function evaluate(
   let weightedLoss = 0;
   let predictionCount = 0;
   for (let index = 0; index < batches; index += 1) {
+    throwIfCancelled(signal);
     const batch = await stream.next();
     const result = languageModelForward(
       batch.inputIds,
@@ -177,6 +191,7 @@ function checkpointConfig(
 }
 
 export async function trainReadyCheckpoint(options: TrainerOptions = {}): Promise<TrainerResult> {
+  throwIfCancelled(options.signal);
   const tokenizerPath = options.tokenizerPath ?? 'src/assets/tokenizer-1024.json';
   const outputRoot = resolve(options.outputRoot ?? 'checkpoints');
   const totalSteps = positiveInteger(
@@ -203,6 +218,7 @@ export async function trainReadyCheckpoint(options: TrainerOptions = {}): Promis
   });
   try {
     const { artifact: tokenizer, sha256: tokenizerSha256 } = await loadTokenizer(tokenizerPath);
+    throwIfCancelled(options.signal);
     if (model.vocabSize !== tokenizer.targetSize) {
       throw new Error(
         `Model vocabulary ${model.vocabSize} does not match tokenizer size ${tokenizer.targetSize}.`,
@@ -281,6 +297,7 @@ export async function trainReadyCheckpoint(options: TrainerOptions = {}): Promis
           batchSize,
           validationBatches,
           seed ^ (split === 'train' ? 0x1234 : 0x5678),
+          options.signal,
         );
         append({
           step: 0,
@@ -304,6 +321,7 @@ export async function trainReadyCheckpoint(options: TrainerOptions = {}): Promis
     let lastGradientNorm = 0;
     let lastLearningRate = 0;
     for (let step = startStep; step < stopAfterStep; step += 1) {
+      throwIfCancelled(options.signal);
       const batch = await trainingStream.next();
       const forward = languageModelForward(
         batch.inputIds,
@@ -314,6 +332,7 @@ export async function trainReadyCheckpoint(options: TrainerOptions = {}): Promis
       );
       if (forward.loss === null) throw new Error('Training loss was not computed.');
       languageModelBackward(forward.cache);
+      throwIfCancelled(options.signal);
       lastLearningRate = learningRateAtStep(step, {
         baseLearningRate: DEFAULT_TRAINING_PRESET.baseLearningRate,
         warmupSteps: Math.min(DEFAULT_TRAINING_PRESET.warmupSteps, totalSteps - 1),
@@ -350,6 +369,7 @@ export async function trainReadyCheckpoint(options: TrainerOptions = {}): Promis
           batchSize,
           validationBatches,
           seed ^ 0x5678,
+          options.signal,
         );
         append({
           step: completedStep,
@@ -368,6 +388,7 @@ export async function trainReadyCheckpoint(options: TrainerOptions = {}): Promis
         (completedStep % checkpointEvery === 0 && completedStep < stopAfterStep) ||
         completedStep === stopAfterStep
       ) {
+        throwIfCancelled(options.signal);
         const config = checkpointConfig(
           model,
           seed,

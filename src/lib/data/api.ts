@@ -1,4 +1,10 @@
-import type { ExportJobState, ServiceStatus } from './api-types';
+import type {
+  CheckpointList,
+  ExportJobState,
+  ServiceStatus,
+  TrainingJobState,
+  TrainingPresetId,
+} from './api-types';
 import { parseCorpusManifest, type CorpusManifest } from './schemas';
 
 function csrfToken(): string {
@@ -44,5 +50,29 @@ export function getExportJob(id: string): Promise<ExportJobState> {
 }
 
 export function cancelExportJob(id: string): Promise<ExportJobState> {
+  return requestJson(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+}
+
+export function getCheckpoints(): Promise<CheckpointList> {
+  return requestJson('/api/checkpoints');
+}
+
+export function selectCheckpoint(id: string): Promise<CheckpointList> {
+  return requestJson(`/api/checkpoints/${encodeURIComponent(id)}/select`, { method: 'POST' });
+}
+
+export function startTraining(preset: TrainingPresetId): Promise<TrainingJobState> {
+  return requestJson('/api/training/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preset }),
+  });
+}
+
+export function getTrainingJob(id: string): Promise<TrainingJobState> {
+  return requestJson(`/api/jobs/${encodeURIComponent(id)}`);
+}
+
+export function cancelTrainingJob(id: string): Promise<TrainingJobState> {
   return requestJson(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
 }

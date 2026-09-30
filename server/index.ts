@@ -1,17 +1,24 @@
 import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { CheckpointList, ServiceStatus } from '../src/lib/data/api-types.js';
+import type { ServiceStatus, TrainingPresetId } from '../src/lib/data/api-types.js';
 import { parseCorpusManifest } from '../src/lib/data/schemas.js';
 import { exportCorpus } from './export/corpus-export.js';
+import { CheckpointCatalog } from './checkpoints/catalog.js';
 import {
   DuplicateExportJobError,
   ExportJobCoordinator,
   type ExportRunner,
 } from './jobs/export-jobs.js';
+import {
+  DuplicateTrainingJobError,
+  TrainingJobCoordinator,
+  type TrainingRunner,
+} from './jobs/training-jobs.js';
+import { trainReadyCheckpoint } from './training/trainer.js';
 
 export const LOOPBACK_HOST = '127.0.0.1';
 export const SERVICE_PORT = 5301;
@@ -46,6 +53,8 @@ export interface LabServerOptions {
   port?: number;
   csrfToken?: string;
   runExport?: ExportRunner;
+  runTraining?: TrainingRunner;
+  checkpointDirectory?: string;
 }
 
 export interface RunningLabServer {
@@ -53,7 +62,39 @@ export interface RunningLabServer {
   origin: string;
   csrfToken: string;
   coordinator: ExportJobCoordinator;
+  trainingCoordinator: TrainingJobCoordinator;
+  checkpointCatalog: CheckpointCatalog;
   close(): Promise<void>;
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of request) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+    length += bytes.byteLength;
+    if (length > 4_096) throw new Error('Request body is too large.');
+    chunks.push(bytes);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+  } catch {
+    throw new Error('Request body must be valid JSON.');
+  }
+}
+
+function trainingPreset(value: unknown): TrainingPresetId {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 1 ||
+    !('preset' in value) ||
+    (value.preset !== 'quick' && value.preset !== 'ready')
+  ) {
+    throw new Error('Training request must contain only preset quick or ready.');
+  }
+  return value.preset;
 }
 
 function securityHeaders(response: ServerResponse): void {
@@ -183,6 +224,8 @@ async function routeApi(
   response: ServerResponse,
   pathname: string,
   coordinator: ExportJobCoordinator,
+  trainingCoordinator: TrainingJobCoordinator,
+  checkpointCatalog: CheckpointCatalog,
   manifestPath: string,
 ): Promise<void> {
   if (request.method === 'GET' && pathname === '/api/status') {
@@ -194,7 +237,12 @@ async function routeApi(
       corpusAvailable: manifest !== null,
       activeExportJobId: coordinator.active()?.id ?? null,
       latestExportJobId: coordinator.latest()?.id ?? null,
-      recoveryWarning: coordinator.recoveryWarning,
+      activeTrainingJobId: trainingCoordinator.active()?.id ?? null,
+      latestTrainingJobId: trainingCoordinator.latest()?.id ?? null,
+      recoveryWarning:
+        [coordinator.recoveryWarning, trainingCoordinator.recoveryWarning]
+          .filter((value) => value !== null)
+          .join(' ') || null,
     };
     json(response, 200, status);
     return;
@@ -222,7 +270,7 @@ async function routeApi(
 
   const jobMatch = pathname.match(/^\/api\/jobs\/([a-zA-Z0-9-]+)$/);
   if (request.method === 'GET' && jobMatch) {
-    const job = coordinator.get(jobMatch[1]);
+    const job = coordinator.get(jobMatch[1]) ?? trainingCoordinator.get(jobMatch[1]);
     if (!job) reject(response, 404, 'Job not found.');
     else json(response, 200, job);
     return;
@@ -230,29 +278,40 @@ async function routeApi(
 
   const cancelMatch = pathname.match(/^\/api\/jobs\/([a-zA-Z0-9-]+)\/cancel$/);
   if (request.method === 'POST' && cancelMatch) {
-    const job = await coordinator.cancel(cancelMatch[1]);
+    const job =
+      (await coordinator.cancel(cancelMatch[1])) ??
+      (await trainingCoordinator.cancel(cancelMatch[1]));
     if (!job) reject(response, 404, 'Job not found.');
     else json(response, 200, job);
     return;
   }
 
   if (request.method === 'GET' && pathname === '/api/checkpoints') {
-    const result: CheckpointList = {
-      checkpoints: [],
-      activeCheckpointId: null,
-      availableInMilestone: 2,
-    };
-    json(response, 200, result);
+    json(response, 200, await checkpointCatalog.list());
     return;
   }
 
   if (request.method === 'POST' && pathname === '/api/training/jobs') {
-    reject(response, 501, 'Training becomes available in Milestone 2.');
+    try {
+      const preset = trainingPreset(await readJsonBody(request));
+      json(response, 202, await trainingCoordinator.start(preset));
+    } catch (error) {
+      if (error instanceof DuplicateTrainingJobError) {
+        json(response, 409, { error: error.message, job: error.job });
+      } else {
+        reject(response, 400, error instanceof Error ? error.message : 'Invalid training request.');
+      }
+    }
     return;
   }
 
-  if (request.method === 'POST' && /^\/api\/checkpoints\/[^/]+\/select$/.test(pathname)) {
-    reject(response, 501, 'Checkpoint selection becomes available in Milestone 2.');
+  const selectionMatch = pathname.match(/^\/api\/checkpoints\/([^/]+)\/select$/);
+  if (request.method === 'POST' && selectionMatch) {
+    try {
+      json(response, 200, await checkpointCatalog.select(decodeURIComponent(selectionMatch[1])));
+    } catch (error) {
+      reject(response, 404, error instanceof Error ? error.message : 'Checkpoint not found.');
+    }
     return;
   }
 
@@ -265,6 +324,9 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
   );
   const distDirectory = resolve(options.distDirectory ?? join(projectDirectory, 'dist'));
   const dataDirectory = resolve(options.dataDirectory ?? join(projectDirectory, 'data'));
+  const checkpointDirectory = resolve(
+    options.checkpointDirectory ?? join(projectDirectory, 'checkpoints'),
+  );
   const requestedPort = options.port ?? SERVICE_PORT;
   const csrfToken = options.csrfToken ?? randomBytes(32).toString('hex');
   const runExport =
@@ -280,6 +342,42 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
     runExport,
   });
   await coordinator.initialize();
+  const checkpointCatalog = new CheckpointCatalog(
+    checkpointDirectory,
+    join(dataDirectory, 'checkpoint-selection.json'),
+  );
+  await checkpointCatalog.initialize();
+  const runTraining =
+    options.runTraining ??
+    (async ({ jobId, preset, signal, onProgress }) => {
+      const staging = join(checkpointDirectory, `.training-${jobId}`);
+      const checkpointId = `trained-${jobId}`;
+      const destination = join(checkpointDirectory, checkpointId);
+      await rm(staging, { recursive: true, force: true });
+      await mkdir(staging, { recursive: true, mode: 0o700 });
+      try {
+        const totalSteps = TrainingJobCoordinator.totalSteps(preset);
+        const result = await trainReadyCheckpoint({
+          outputRoot: staging,
+          totalSteps,
+          checkpointEvery: preset === 'quick' ? totalSteps : 500,
+          logEvery: preset === 'quick' ? 10 : 25,
+          validateEvery: preset === 'quick' ? 25 : 100,
+          validationBatches: preset === 'quick' ? 4 : 8,
+          signal,
+          onProgress,
+        });
+        await rename(result.checkpointPath, destination);
+        return { checkpointId };
+      } finally {
+        await rm(staging, { recursive: true, force: true });
+      }
+    });
+  const trainingCoordinator = new TrainingJobCoordinator({
+    statePath: join(dataDirectory, 'training-job-state.json'),
+    runTraining,
+  });
+  await trainingCoordinator.initialize();
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -298,6 +396,8 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
           response,
           url.pathname,
           coordinator,
+          trainingCoordinator,
+          checkpointCatalog,
           join(dataDirectory, 'manifest.json'),
         );
       } else {
@@ -324,11 +424,14 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
     origin: `http://${LOOPBACK_HOST}:${actualPort}`,
     csrfToken,
     coordinator,
+    trainingCoordinator,
+    checkpointCatalog,
     close: async () => {
       await new Promise<void>((resolveClose, rejectClose) => {
         server.close((error) => (error ? rejectClose(error) : resolveClose()));
       });
       await coordinator.flush();
+      await trainingCoordinator.shutdown();
     },
   };
 }

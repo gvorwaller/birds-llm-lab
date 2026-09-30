@@ -15,7 +15,7 @@ import { trainingDocumentText } from '../../src/lib/tokenizer/corpus';
 import { trainBpe } from '../../src/lib/tokenizer/bpe';
 import { loadCheckpoint } from '../checkpoint-store';
 import { DeterministicBatchStream, StreamedTokenDataset } from './token-dataset';
-import { trainReadyCheckpoint } from './trainer';
+import { trainReadyCheckpoint, TrainingCancelledError } from './trainer';
 
 const temporaryDirectories: string[] = [];
 
@@ -180,5 +180,32 @@ describe('streamed token dataset and Node trainer', () => {
     expect(JSON.parse(await readFile(join(resumed.checkpointPath, 'config.json'), 'utf8'))).toEqual(
       JSON.parse(await readFile(join(uninterrupted.checkpointPath, 'config.json'), 'utf8')),
     );
+  });
+
+  it('cooperatively cancels without publishing a checkpoint', async () => {
+    const paths = await fixture();
+    const controller = new AbortController();
+    const outputRoot = join(paths.root, 'cancelled');
+    await expect(
+      trainReadyCheckpoint({
+        ...paths,
+        outputRoot,
+        totalSteps: 6,
+        checkpointEvery: 3,
+        logEvery: 3,
+        validateEvery: 3,
+        validationBatches: 1,
+        batchSize: 2,
+        model: tinyModel,
+        sourceGitRevision: 'c'.repeat(40),
+        signal: controller.signal,
+        onProgress() {
+          controller.abort();
+        },
+      }),
+    ).rejects.toBeInstanceOf(TrainingCancelledError);
+    await expect(readFile(join(outputRoot, 'ready-v1', 'config.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 });

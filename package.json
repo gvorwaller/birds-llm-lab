@@ -20,6 +20,7 @@
     "verify:m0": "tsx scripts/verify-m0.ts",
     "verify:m1": "tsx scripts/verify-m1.ts",
     "verify:m2-learning": "tsx scripts/verify-m2-learning.ts",
+    "verify:m2-determinism": "tsx scripts/verify-m2-determinism.ts",
     "benchmark:tokenizer": "tsx scripts/benchmark-tokenizer.ts",
     "benchmark:model": "tsx scripts/benchmark-model.ts",
     "export": "tsx scripts/export-corpus.ts",

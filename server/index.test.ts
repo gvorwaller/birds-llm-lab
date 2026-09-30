@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ExportCancelledError, type ExportCorpusResult } from './export/corpus-export';
+import { TrainingCancelledError } from './training/trainer';
 import { startLabServer, type LabServerOptions, type RunningLabServer } from './index';
 
 const temporaryDirectories: string[] = [];
@@ -16,7 +17,10 @@ afterEach(async () => {
   );
 });
 
-async function fixtureServer(runExport: LabServerOptions['runExport']): Promise<RunningLabServer> {
+async function fixtureServer(
+  runExport: LabServerOptions['runExport'],
+  runTraining: NonNullable<LabServerOptions['runTraining']> = delayedTraining(),
+): Promise<RunningLabServer> {
   const directory = await mkdtemp(join(tmpdir(), 'birds-llm-server-'));
   temporaryDirectories.push(directory);
   const dist = join(directory, 'dist');
@@ -34,9 +38,17 @@ async function fixtureServer(runExport: LabServerOptions['runExport']): Promise<
     port: 0,
     csrfToken: 'test-csrf-token',
     runExport,
+    runTraining,
   });
   runningServers.push(server);
   return server;
+}
+
+function delayedTraining(): NonNullable<LabServerOptions['runTraining']> {
+  return ({ signal }) =>
+    new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(new TrainingCancelledError()), { once: true });
+    });
 }
 
 function delayedExport(): NonNullable<LabServerOptions['runExport']> {
@@ -78,6 +90,18 @@ async function post(
       'X-Birds-LLM-Lab-CSRF': server.csrfToken,
       ...overrides,
     },
+  });
+}
+
+async function postJson(server: RunningLabServer, path: string, body: unknown): Promise<Response> {
+  return fetch(`${server.origin}${path}`, {
+    method: 'POST',
+    headers: {
+      Origin: server.origin,
+      'X-Birds-LLM-Lab-CSRF': server.csrfToken,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
   });
 }
 
@@ -133,7 +157,7 @@ describe('loopback service', () => {
     throw new Error('API job did not cancel.');
   });
 
-  it('keeps unimplemented training and checkpoint actions explicit', async () => {
+  it('starts only safe training presets, rejects duplicates, and cancels through the fixed API', async () => {
     const server = await fixtureServer(delayedExport());
     const checkpoints = await fetch(`${server.origin}/api/checkpoints`).then((response) =>
       response.json(),
@@ -141,9 +165,24 @@ describe('loopback service', () => {
     expect(checkpoints).toEqual({
       checkpoints: [],
       activeCheckpointId: null,
-      availableInMilestone: 2,
+      recoveryWarning: null,
     });
-    expect((await post(server, '/api/training/jobs')).status).toBe(501);
-    expect((await post(server, '/api/checkpoints/example/select')).status).toBe(501);
+    expect((await postJson(server, '/api/training/jobs', { preset: 'custom' })).status).toBe(400);
+    const started = await postJson(server, '/api/training/jobs', { preset: 'quick' });
+    expect(started.status).toBe(202);
+    const job = (await started.json()) as { id: string };
+    expect((await postJson(server, '/api/training/jobs', { preset: 'ready' })).status).toBe(409);
+    expect((await post(server, `/api/jobs/${job.id}/cancel`)).status).toBe(200);
+    let finalStatus = '';
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const current = (await fetch(`${server.origin}/api/jobs/${job.id}`).then((response) =>
+        response.json(),
+      )) as { status: string };
+      finalStatus = current.status;
+      if (current.status === 'cancelled') break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(finalStatus).toBe('cancelled');
+    expect((await post(server, '/api/checkpoints/example/select')).status).toBe(404);
   });
 });

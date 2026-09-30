@@ -29,11 +29,54 @@ export interface ServiceStatus {
   corpusAvailable: boolean;
   activeExportJobId: string | null;
   latestExportJobId: string | null;
+  activeTrainingJobId: string | null;
+  latestTrainingJobId: string | null;
   recoveryWarning: string | null;
 }
 
+export type TrainingPresetId = 'quick' | 'ready';
+
+export type TrainingJobStatus =
+  'queued' | 'running' | 'cancelling' | 'cancelled' | 'succeeded' | 'failed' | 'interrupted';
+
+export interface TrainingJobProgress {
+  step: number;
+  totalSteps: number;
+  trainLoss: number | null;
+  validationLoss: number | null;
+  learningRate: number;
+  elapsedMs: number;
+  estimatedRemainingMs: number | null;
+  latestSample: string | null;
+}
+
+export interface TrainingJobState {
+  id: string;
+  kind: 'model-training';
+  preset: TrainingPresetId;
+  status: TrainingJobStatus;
+  createdAt: string;
+  updatedAt: string;
+  progress: TrainingJobProgress;
+  logs: string[];
+  checkpointId: string | null;
+  error: string | null;
+}
+
+export interface CheckpointSummary {
+  id: string;
+  trainingStep: number;
+  totalSteps: number;
+  corpusSha256: string;
+  tokenizerSha256: string;
+  sourceGitRevision: string | null;
+  finalTrainLoss: number | null;
+  finalValidationLoss: number | null;
+  modifiedAt: string;
+}
+
 export interface CheckpointList {
-  checkpoints: [];
-  activeCheckpointId: null;
-  availableInMilestone: 2;
+  checkpoints: CheckpointSummary[];
+  activeCheckpointId: string | null;
+  recoveryWarning: string | null;
 }

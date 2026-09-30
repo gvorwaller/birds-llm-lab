@@ -15,7 +15,7 @@ data/*.bin
 data/manifest.json
 data/job-state.json
 data/tokenizer.json
-checkpoints/
+/checkpoints/
 
 # Optional downloaded comparison models and browser-test artifacts
 .cache/
