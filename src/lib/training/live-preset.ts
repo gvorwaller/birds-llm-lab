@@ -44,6 +44,7 @@ export function smallBirdNamePreset(displayEvery = 10): LiveTrainingConfig {
     samplePromptIds: encodeByteTokens('Bird name: ', { bos: true }),
     sampleNewTokens: 18,
     selectedWeightName: 'blocks.0.attn.q.weight',
+    selectedScalar: { name: 'blocks.0.attn.q.weight', index: 0 },
     seed: 0x5eed,
     batchSize: 4,
     totalSteps: 300,

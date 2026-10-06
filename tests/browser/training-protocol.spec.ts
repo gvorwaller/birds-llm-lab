@@ -68,3 +68,23 @@ test('plots small-preset train and validation metrics, samples, histogram, and m
   );
   expect(overflow).toBe(0);
 });
+
+test('shows the exact selected scalar stages for a paused Adam batch', async ({ page }) => {
+  await page.goto('/training');
+  await page.getByRole('button', { name: 'Start small preset' }).click();
+  await expect(page.getByTestId('worker-state')).toHaveText('running');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(page.getByTestId('worker-state')).toHaveText('paused');
+  const before = Number((await page.getByTestId('worker-step').textContent())?.split(' / ')[0]);
+  await page.getByRole('button', { name: 'One batch' }).click();
+  await expect(page.getByTestId('worker-step')).toHaveText(`${before + 1} / 300`);
+  await expect(page.getByTestId('adam-scalar-name')).toHaveText(
+    `blocks.0.attn.q.weight[0] · update ${before + 1}`,
+  );
+  await expect(page.getByTestId('adam-stages').getByRole('listitem')).toHaveCount(9);
+  await expect(page.getByTestId('adam-after')).toContainText(' = ');
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBe(0);
+});

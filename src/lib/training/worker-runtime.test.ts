@@ -113,6 +113,7 @@ describe('live training worker protocol', () => {
       const progress = harness.replies.filter((reply) => reply.type === 'progress');
       expect(progress).toHaveLength(1);
       expect(Object.keys(progress[0]).sort()).toEqual([
+        'adamStep',
         'gradientNorm',
         'learningRate',
         'predictionCount',
@@ -152,6 +153,17 @@ describe('live training worker protocol', () => {
         (reply) => reply.type === 'error' && reply.runId === 'oversized',
       );
       expect(oversized).toMatchObject({ code: 'invalid-config' });
+      const invalidScalar = await harness.send(
+        {
+          version: VERSION,
+          runId: 'invalid-scalar',
+          type: 'start',
+          config: { ...config, selectedScalar: { name: 'blocks.0.attn.q.weight', index: -1 } },
+          startPaused: true,
+        },
+        (reply) => reply.type === 'error' && reply.runId === 'invalid-scalar',
+      );
+      expect(invalidScalar).toMatchObject({ code: 'invalid-config' });
     } finally {
       harness.dispose();
     }
@@ -284,6 +296,8 @@ describe('live training worker protocol', () => {
       }
       const reports = harness.replies.filter((reply) => reply.type === 'progress');
       expect(reports).toHaveLength(1);
+      const inspected = harness.replies.filter((reply) => reply.type === 'adam-step');
+      expect(inspected).toHaveLength(2);
       const report = reports[0];
       if (report.type !== 'progress') throw new Error('Expected progress.');
       const saved = await harness.send(
@@ -313,6 +327,16 @@ describe('live training worker protocol', () => {
       );
       expect(report.selectedWeight?.histogramCounts.reduce((sum, count) => sum + count, 0)).toBe(
         report.selectedWeight?.values.length,
+      );
+      const trace = inspected[1].type === 'adam-step' ? inspected[1].trace : null;
+      if (!trace) throw new Error('Expected Adam scalar trace.');
+      expect(trace.step).toBe(2);
+      expect(report.adamStep).toEqual(trace);
+      expect(trace.valueAfter).toBe(registry.get(trace.name).value.data[trace.index]);
+      expect(trace.firstMoment).toBe(
+        saved.checkpoint.optimizer.moments.find((moment) => moment.name === trace.name)?.first[
+          trace.index
+        ],
       );
     } finally {
       harness.dispose();

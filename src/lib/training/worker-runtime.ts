@@ -124,6 +124,21 @@ function validatedConfig(input: LiveTrainingConfig): {
   ) {
     throw new Error('Selected weight must name a model matrix of at most 1,024 cells.');
   }
+  const selectedScalar = input.selectedScalar
+    ? { name: input.selectedScalar.name, index: input.selectedScalar.index }
+    : undefined;
+  if (
+    selectedScalar &&
+    !parameterSpecs(model).some(
+      (specification) =>
+        specification.name === selectedScalar.name &&
+        Number.isSafeInteger(selectedScalar.index) &&
+        selectedScalar.index >= 0 &&
+        selectedScalar.index < specification.shape.reduce((size, dimension) => size * dimension, 1),
+    )
+  ) {
+    throw new Error('Selected Adam scalar must name a valid parameter element.');
+  }
   const batches = deterministicLanguageModelBatches(
     sequences,
     input.batchSize,
@@ -138,6 +153,7 @@ function validatedConfig(input: LiveTrainingConfig): {
     ...(validationSequences ? { validationSequences } : {}),
     ...(samplePromptIds ? { samplePromptIds, sampleNewTokens: input.sampleNewTokens } : {}),
     ...(input.selectedWeightName ? { selectedWeightName: input.selectedWeightName } : {}),
+    ...(selectedScalar ? { selectedScalar } : {}),
     seed: input.seed,
     batchSize: input.batchSize,
     totalSteps: input.totalSteps,
@@ -159,6 +175,7 @@ function validatedConfig(input: LiveTrainingConfig): {
     samplePromptIds: samplePromptIds ?? null,
     sampleNewTokens: config.sampleNewTokens ?? null,
     selectedWeightName: config.selectedWeightName ?? null,
+    selectedScalar: selectedScalar ?? null,
   });
   return { config, identity };
 }
@@ -372,7 +389,8 @@ export class LiveTrainingWorkerRuntime {
         warmupSteps: run.config.warmupSteps,
         totalSteps: run.config.totalSteps,
       });
-      const update = run.optimizer.step(run.registry, learningRate);
+      const inspectStep = this.singleStepPending;
+      const update = run.optimizer.step(run.registry, learningRate, run.config.selectedScalar);
       run.step = update.step;
       run.batchIndex += 1;
       if (run.batchIndex === run.batches.length) {
@@ -416,6 +434,15 @@ export class LiveTrainingWorkerRuntime {
           gradientNorm: update.gradientNorm,
           sampleTokenIds: sample,
           selectedWeight,
+          adamStep: update.scalarTrace,
+        });
+      }
+      if (inspectStep && update.scalarTrace) {
+        this.post({
+          version: VERSION,
+          runId: run.id,
+          type: 'adam-step',
+          trace: update.scalarTrace,
         });
       }
       if (run.step === run.config.totalSteps) {

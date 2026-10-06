@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import MetricPlot from './MetricPlot.svelte';
+  import type { AdamWScalarTrace } from '../lib/model/optimizer';
   import { decodeTokenIds } from '../lib/tokenizer/codec';
   import { smallBirdNamePreset, SMALL_BIRD_NAME_PRESET_SUMMARY } from '../lib/training/live-preset';
   import {
@@ -65,6 +66,7 @@
   let runConfig = $state.raw<LiveTrainingConfig | null>(null);
   let renderedProgress = $state.raw<Progress[]>([]);
   let latest = $state.raw<Progress | null>(null);
+  let adamTrace = $state.raw<AdamWScalarTrace | null>(null);
   let checkpoint = $state.raw<LiveTrainingCheckpoint | null>(null);
   let lastError = $state('');
   let uiTicks = $state(0);
@@ -113,6 +115,10 @@
     return value >= 0 ? `rgba(42, 112, 77, ${strength})` : `rgba(197, 96, 58, ${strength})`;
   }
 
+  function scalar(value: number): string {
+    return value.toPrecision(8);
+  }
+
   function flushProgress(): void {
     renderTimer = null;
     if (queuedProgress.length === 0) return;
@@ -138,6 +144,9 @@
         if (reply.state === 'completed') flushProgress();
       } else if (reply.type === 'progress') {
         queueProgress(reply);
+        if (reply.adamStep) adamTrace = reply.adamStep;
+      } else if (reply.type === 'adam-step') {
+        adamTrace = reply.trace;
       } else if (reply.type === 'checkpoint') {
         checkpoint = reply.checkpoint;
       } else {
@@ -161,6 +170,7 @@
     checkpoint = null;
     renderedProgress = [];
     latest = null;
+    adamTrace = null;
     runConfig = null;
     step = 0;
   }
@@ -170,6 +180,7 @@
     checkpoint = null;
     renderedProgress = [];
     latest = null;
+    adamTrace = null;
     queuedProgress = [];
     if (renderTimer !== null) window.clearTimeout(renderTimer);
     renderTimer = null;
@@ -318,8 +329,8 @@
     {#if lastError}<p class="error" role="alert">{lastError}</p>{/if}
     <p class="note">
       The Worker trains every batch. It computes and sends display values only at the selected step
-      cadence. This screen draws at most once per 100 ms; skipped frames do not skip training steps
-      or logged points.
+      cadence, except for a scalar trace requested by “One batch.” This screen draws charts at most
+      once per 100 ms; skipped frames do not skip training steps or logged points.
     </p>
   </div>
 
@@ -337,6 +348,73 @@
       Train loss is from the batch before its update; validation loss, sample, and weight snapshot
       use the updated model at that step.
     </p>
+    <div class="lab-panel" aria-label="Slowed Adam step">
+      <h2>Slowed AdamW step</h2>
+      <p class="note">
+        Pause and choose “One batch” to inspect one update. During a run, this display refreshes at
+        the selected cadence. It follows a single named weight, not the whole matrix.
+      </p>
+      {#if adamTrace}
+        <p class="fixture" data-testid="adam-scalar-name">
+          {adamTrace.name}[{adamTrace.index}] · update {adamTrace.step}
+        </p>
+        <ol class="adam-stages" data-testid="adam-stages">
+          <li>
+            <strong>Before update</strong><span data-testid="adam-before"
+              >{scalar(adamTrace.valueBefore)}</span
+            >
+          </li>
+          <li><strong>Raw gradient</strong><span>{scalar(adamTrace.rawGradient)}</span></li>
+          <li>
+            <strong>Clip global gradient</strong><span
+              >{scalar(adamTrace.rawGradient)} × {scalar(adamTrace.clipScale)} = {scalar(
+                adamTrace.clippedGradient,
+              )}</span
+            >
+          </li>
+          <li>
+            <strong>First moment</strong><span
+              >m: {scalar(adamTrace.firstMomentBefore)} → {scalar(adamTrace.firstMoment)}</span
+            >
+          </li>
+          <li>
+            <strong>Second moment</strong><span
+              >v: {scalar(adamTrace.secondMomentBefore)} → {scalar(adamTrace.secondMoment)}</span
+            >
+          </li>
+          <li>
+            <strong>Bias correction</strong><span
+              >1 − β₁<sup>t</sup> = {scalar(adamTrace.firstBiasCorrection)}; 1 − β₂<sup>t</sup> = {scalar(
+                adamTrace.secondBiasCorrection,
+              )}</span
+            >
+          </li>
+          <li>
+            <strong>Corrected moments</strong><span
+              >m̂ = {scalar(adamTrace.firstEstimate)}; v̂ = {scalar(adamTrace.secondEstimate)}</span
+            >
+          </li>
+          <li>
+            <strong>Adam + weight decay</strong><span
+              >{scalar(adamTrace.adaptiveTerm)} + {scalar(adamTrace.decayTerm)}</span
+            >
+          </li>
+          <li>
+            <strong>Updated value</strong><span data-testid="adam-after"
+              >{scalar(adamTrace.valueBefore)} − {scalar(adamTrace.learningRate)} × ({scalar(
+                adamTrace.adaptiveTerm,
+              )} + {scalar(adamTrace.decayTerm)}) = {scalar(adamTrace.valueAfter)}</span
+            >
+          </li>
+        </ol>
+        <p class="note">
+          Moments and the stored weight use Float32 rounding. The final value above is read back
+          from the updated parameter.
+        </p>
+      {:else}
+        <p>No Adam update to inspect yet.</p>
+      {/if}
+    </div>
     <div class="lab-panel">
       <h2>Seeded sample generations</h2>
       <p class="note">
@@ -506,6 +584,30 @@
     display: grid;
     gap: 0.6rem;
     padding-left: 1.4rem;
+  }
+  .adam-stages {
+    display: grid;
+    gap: 0;
+    padding-left: 1.6rem;
+  }
+  .adam-stages li {
+    padding: 0.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .adam-stages li::marker {
+    color: var(--muted);
+  }
+  .adam-stages strong {
+    display: block;
+    margin-bottom: 0.2rem;
+  }
+  .adam-stages span {
+    font:
+      0.8rem ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+    overflow-wrap: anywhere;
   }
   .samples li span {
     color: var(--muted);

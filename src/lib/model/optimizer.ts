@@ -20,6 +20,32 @@ export interface OptimizerStepResult {
   readonly learningRate: number;
   readonly gradientNorm: number;
   readonly clipScale: number;
+  readonly scalarTrace: AdamWScalarTrace | null;
+}
+
+export interface AdamWScalarSelection {
+  readonly name: string;
+  readonly index: number;
+}
+
+export interface AdamWScalarTrace extends AdamWScalarSelection {
+  readonly step: number;
+  readonly valueBefore: number;
+  readonly rawGradient: number;
+  readonly clipScale: number;
+  readonly clippedGradient: number;
+  readonly firstMomentBefore: number;
+  readonly secondMomentBefore: number;
+  readonly firstMoment: number;
+  readonly secondMoment: number;
+  readonly firstBiasCorrection: number;
+  readonly secondBiasCorrection: number;
+  readonly firstEstimate: number;
+  readonly secondEstimate: number;
+  readonly adaptiveTerm: number;
+  readonly decayTerm: number;
+  readonly learningRate: number;
+  readonly valueAfter: number;
 }
 
 export interface AdamWMomentSnapshot {
@@ -99,7 +125,11 @@ export class AdamWOptimizer {
     return this.completedSteps;
   }
 
-  step(registry: ParameterRegistry, learningRate: number): OptimizerStepResult {
+  step(
+    registry: ParameterRegistry,
+    learningRate: number,
+    inspect?: AdamWScalarSelection,
+  ): OptimizerStepResult {
     if (learningRate < 0 || !Number.isFinite(learningRate)) {
       throw new Error('Optimizer learning rate must be non-negative and finite.');
     }
@@ -116,6 +146,17 @@ export class AdamWOptimizer {
     const updateNumber = this.completedSteps + 1;
     const firstCorrection = 1 - this.hyperparameters.beta1 ** updateNumber;
     const secondCorrection = 1 - this.hyperparameters.beta2 ** updateNumber;
+    if (inspect) {
+      const parameter = registry.get(inspect.name);
+      if (
+        !Number.isSafeInteger(inspect.index) ||
+        inspect.index < 0 ||
+        inspect.index >= parameter.value.data.length
+      ) {
+        throw new Error(`AdamW scalar index is outside ${inspect.name}.`);
+      }
+    }
+    let scalarTrace: AdamWScalarTrace | null = null;
 
     for (const parameter of registry) {
       let state = this.moments.get(parameter.name);
@@ -129,7 +170,12 @@ export class AdamWOptimizer {
         throw new Error(`AdamW state shape changed for ${parameter.name}.`);
       }
       for (let index = 0; index < parameter.value.data.length; index += 1) {
-        const gradient = parameter.gradient.data[index] * clipScale;
+        const selected = inspect?.name === parameter.name && inspect.index === index;
+        const valueBefore = selected ? parameter.value.data[index] : 0;
+        const rawGradient = parameter.gradient.data[index];
+        const firstMomentBefore = selected ? state.first[index] : 0;
+        const secondMomentBefore = selected ? state.second[index] : 0;
+        const gradient = rawGradient * clipScale;
         state.first[index] =
           this.hyperparameters.beta1 * state.first[index] +
           (1 - this.hyperparameters.beta1) * gradient;
@@ -143,11 +189,34 @@ export class AdamWOptimizer {
           ? this.hyperparameters.weightDecay * parameter.value.data[index]
           : 0;
         parameter.value.data[index] -= learningRate * (adaptive + decay);
+        if (selected) {
+          scalarTrace = {
+            name: parameter.name,
+            index,
+            step: updateNumber,
+            valueBefore,
+            rawGradient,
+            clipScale,
+            clippedGradient: gradient,
+            firstMomentBefore,
+            secondMomentBefore,
+            firstMoment: state.first[index],
+            secondMoment: state.second[index],
+            firstBiasCorrection: firstCorrection,
+            secondBiasCorrection: secondCorrection,
+            firstEstimate,
+            secondEstimate,
+            adaptiveTerm: adaptive,
+            decayTerm: decay,
+            learningRate,
+            valueAfter: parameter.value.data[index],
+          };
+        }
       }
       assertFinite(parameter.value.data, `${parameter.name} updated value`);
     }
     this.completedSteps = updateNumber;
-    return { step: updateNumber, learningRate, gradientNorm, clipScale };
+    return { step: updateNumber, learningRate, gradientNorm, clipScale, scalarTrace };
   }
 
   stepWithSchedule(

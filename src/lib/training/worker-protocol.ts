@@ -1,5 +1,10 @@
 import type { ModelConfig, WeightIndexArtifact } from '../data/schemas';
-import type { AdamWHyperparameters, AdamWSnapshot } from '../model/optimizer';
+import type {
+  AdamWHyperparameters,
+  AdamWScalarSelection,
+  AdamWScalarTrace,
+  AdamWSnapshot,
+} from '../model/optimizer';
 
 export const LIVE_TRAINING_PROTOCOL_VERSION = 1 as const;
 
@@ -11,6 +16,7 @@ export interface LiveTrainingConfig {
   readonly samplePromptIds?: readonly number[];
   readonly sampleNewTokens?: number;
   readonly selectedWeightName?: string;
+  readonly selectedScalar?: AdamWScalarSelection;
   readonly seed: number;
   readonly batchSize: number;
   readonly totalSteps: number;
@@ -75,6 +81,11 @@ export type LiveTrainingReply =
       readonly gradientNorm: number;
       readonly sampleTokenIds: readonly number[] | null;
       readonly selectedWeight: SelectedWeightSnapshot | null;
+      readonly adamStep: AdamWScalarTrace | null;
+    })
+  | (CommandBase & {
+      readonly type: 'adam-step';
+      readonly trace: AdamWScalarTrace;
     })
   | (CommandBase & {
       readonly type: 'checkpoint';
