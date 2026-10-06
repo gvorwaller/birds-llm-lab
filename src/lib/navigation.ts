@@ -85,6 +85,15 @@ export const routes: readonly LabRoute[] = [
       'Compare exact phrases, normalized terms, and species documents across the labeled corpus splits.',
     milestone: 'M6',
   },
+  {
+    path: '/parameters',
+    label: 'Parameters',
+    eyebrow: 'Weight bench',
+    title: 'Inspect every stored weight.',
+    summary:
+      'Browse the checkpoint registry, distribution, and bounded heatmap, then follow a tensor into the forward trace.',
+    milestone: 'M6',
+  },
 ];
 
 export function normalizePath(pathname: string): string {

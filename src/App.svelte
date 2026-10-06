@@ -9,6 +9,7 @@
   import GenerationLab from './components/GenerationLab.svelte';
   import TrainingProtocolBench from './components/TrainingProtocolBench.svelte';
   import EvidenceWorkbench from './components/EvidenceWorkbench.svelte';
+  import ParameterExplorer from './components/ParameterExplorer.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
   let pathname = $state('/');
@@ -138,6 +139,8 @@
       <TrainingProtocolBench />
     {:else if currentRoute.path === '/evidence'}
       <EvidenceWorkbench />
+    {:else if currentRoute.path === '/parameters'}
+      <ParameterExplorer />
     {:else}
       <section class="placeholder" aria-labelledby="placeholder-title">
         <div>

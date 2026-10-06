@@ -22,6 +22,7 @@
     "verify:m2-learning": "tsx scripts/verify-m2-learning.ts",
     "verify:m2-determinism": "tsx scripts/verify-m2-determinism.ts",
     "verify:m6-example": "tsx scripts/verify-m6-example.ts",
+    "verify:m6-parameters": "tsx scripts/verify-m6-parameters.ts",
     "benchmark:tokenizer": "tsx scripts/benchmark-tokenizer.ts",
     "benchmark:model": "tsx scripts/benchmark-model.ts",
     "export": "tsx scripts/export-corpus.ts",

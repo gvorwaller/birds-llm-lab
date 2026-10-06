@@ -2,12 +2,13 @@ import { getActiveCheckpointForInspection } from './api';
 import { parseCheckpointConfig, parseTokenizerArtifact } from './schemas';
 import { decodeCheckpointWeights } from '../model/checkpoint';
 import type { ParameterRegistry } from '../model/parameters';
-import type { CheckpointConfig, TokenizerArtifact } from './schemas';
+import type { CheckpointConfig, TokenizerArtifact, WeightIndexArtifact } from './schemas';
 
 export interface InspectionModel {
   readonly checkpointId: string;
   readonly config: CheckpointConfig;
   readonly tokenizer: TokenizerArtifact;
+  readonly weightIndex: WeightIndexArtifact;
   readonly registry: ParameterRegistry;
 }
 
@@ -27,5 +28,11 @@ export async function loadInspectionModel(): Promise<InspectionModel> {
     bundle.weightIndex,
     decodeBase64(bundle.weightsBase64),
   );
-  return { checkpointId: bundle.checkpointId, config, tokenizer, registry };
+  return {
+    checkpointId: bundle.checkpointId,
+    config,
+    tokenizer,
+    weightIndex: bundle.weightIndex,
+    registry,
+  };
 }

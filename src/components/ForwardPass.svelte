@@ -61,7 +61,11 @@
       tokenIds = ids;
       trace = result.trace ?? null;
       selectedByStage = {};
-      step = 0;
+      const requestedStage = new URLSearchParams(window.location.search).get('stage');
+      step = Math.max(
+        0,
+        stages.findIndex((candidate) => candidate.name === requestedStage),
+      );
     } catch (cause) {
       if (request !== requestNumber) return;
       error = cause instanceof Error ? cause.message : 'The checkpoint could not be inspected.';

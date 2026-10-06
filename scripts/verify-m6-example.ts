@@ -29,6 +29,7 @@ const replay = replayKestrelExample({
   config: checkpoint.config,
   tokenizer: parseTokenizerArtifact(JSON.parse(tokenizerBytes.toString('utf8')) as unknown),
   registry: checkpoint.parameters,
+  weightIndex: checkpoint.weightIndex,
 });
 const evidence = await new CorpusEvidenceIndex(corpusPath, manifestPath).verifiedExampleEvidence();
 if (
