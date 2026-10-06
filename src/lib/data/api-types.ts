@@ -1,9 +1,36 @@
 import type {
   CheckpointConfig,
   CorpusManifest,
+  CorpusSplit,
   TokenizerArtifact,
   WeightIndexArtifact,
 } from './schemas';
+
+export interface EvidenceHit {
+  code: string;
+  name: string;
+  sci: string;
+  split: CorpusSplit;
+  field: string;
+  snippet: string;
+}
+
+export interface EvidenceMatchPage {
+  total: number;
+  hits: EvidenceHit[];
+}
+
+export interface EvidenceSearchResponse {
+  query: string;
+  page: number;
+  pageSize: number;
+  corpusSha256: string;
+  exportedAt: string;
+  indexedDocuments: number;
+  exactPhrase: EvidenceMatchPage;
+  normalizedTerms: EvidenceMatchPage;
+  speciesDocuments: EvidenceMatchPage;
+}
 
 export type ExportJobStatus =
   'queued' | 'running' | 'cancelling' | 'cancelled' | 'succeeded' | 'failed' | 'interrupted';

@@ -1,6 +1,7 @@
 import type {
   CheckpointList,
   CheckpointInspectionBundle,
+  EvidenceSearchResponse,
   ExportJobState,
   ServiceStatus,
   TrainingJobState,
@@ -33,6 +34,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getServiceStatus(): Promise<ServiceStatus> {
   return requestJson('/api/status');
+}
+
+export function searchCorpusEvidence(query: string, page = 0): Promise<EvidenceSearchResponse> {
+  const parameters = new URLSearchParams({ q: query, page: String(page) });
+  return requestJson(`/api/evidence/search?${parameters}`);
 }
 
 export async function getCorpusManifest(): Promise<CorpusManifest | null> {

@@ -8,6 +8,7 @@
   import EmbeddingsLab from './components/EmbeddingsLab.svelte';
   import GenerationLab from './components/GenerationLab.svelte';
   import TrainingProtocolBench from './components/TrainingProtocolBench.svelte';
+  import EvidenceWorkbench from './components/EvidenceWorkbench.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
   let pathname = $state('/');
@@ -135,6 +136,8 @@
       <GenerationLab />
     {:else if currentRoute.path === '/training'}
       <TrainingProtocolBench />
+    {:else if currentRoute.path === '/evidence'}
+      <EvidenceWorkbench />
     {:else}
       <section class="placeholder" aria-labelledby="placeholder-title">
         <div>

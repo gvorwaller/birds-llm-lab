@@ -6,6 +6,11 @@ import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ServiceStatus, TrainingPresetId } from '../src/lib/data/api-types.js';
 import { parseCorpusManifest } from '../src/lib/data/schemas.js';
+import {
+  CorpusEvidenceIndex,
+  EvidenceQueryError,
+  EvidenceUnavailableError,
+} from './evidence/index.js';
 import { exportCorpus } from './export/corpus-export.js';
 import { CheckpointCatalog } from './checkpoints/catalog.js';
 import {
@@ -226,8 +231,10 @@ async function routeApi(
   coordinator: ExportJobCoordinator,
   trainingCoordinator: TrainingJobCoordinator,
   checkpointCatalog: CheckpointCatalog,
+  evidenceIndex: CorpusEvidenceIndex,
   manifestPath: string,
   tokenizerPath: string,
+  searchParams: URLSearchParams,
 ): Promise<void> {
   if (request.method === 'GET' && pathname === '/api/status') {
     const manifest = await readManifest(manifestPath);
@@ -253,6 +260,20 @@ async function routeApi(
     const manifest = await readManifest(manifestPath);
     if (!manifest) reject(response, 404, 'No exported corpus is available yet.');
     else json(response, 200, manifest);
+    return;
+  }
+
+  if (request.method === 'GET' && pathname === '/api/evidence/search') {
+    try {
+      const query = searchParams.get('q') ?? '';
+      const rawPage = searchParams.get('page') ?? '0';
+      const page = /^\d+$/.test(rawPage) ? Number(rawPage) : NaN;
+      json(response, 200, await evidenceIndex.search(query, page));
+    } catch (error) {
+      if (error instanceof EvidenceQueryError) reject(response, 400, error.message);
+      else if (error instanceof EvidenceUnavailableError) reject(response, 409, error.message);
+      else throw error;
+    }
     return;
   }
 
@@ -340,6 +361,10 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
   );
   const distDirectory = resolve(options.distDirectory ?? join(projectDirectory, 'dist'));
   const dataDirectory = resolve(options.dataDirectory ?? join(projectDirectory, 'data'));
+  const evidenceIndex = new CorpusEvidenceIndex(
+    join(dataDirectory, 'corpus.jsonl'),
+    join(dataDirectory, 'manifest.json'),
+  );
   const checkpointDirectory = resolve(
     options.checkpointDirectory ?? join(projectDirectory, 'checkpoints'),
   );
@@ -414,8 +439,10 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
           coordinator,
           trainingCoordinator,
           checkpointCatalog,
+          evidenceIndex,
           join(dataDirectory, 'manifest.json'),
           join(projectDirectory, 'src/assets/tokenizer-1024.json'),
+          url.searchParams,
         );
       } else {
         await serveStatic(request, response, url.pathname, distDirectory, csrfToken);

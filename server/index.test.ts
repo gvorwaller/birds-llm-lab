@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { serializeCorpusRow, type CorpusManifest, type CorpusRow } from '../src/lib/data/schemas';
 import { ExportCancelledError, type ExportCorpusResult } from './export/corpus-export';
 import { TrainingCancelledError } from './training/trainer';
 import { startLabServer, type LabServerOptions, type RunningLabServer } from './index';
@@ -20,12 +22,15 @@ afterEach(async () => {
 async function fixtureServer(
   runExport: LabServerOptions['runExport'],
   runTraining: NonNullable<LabServerOptions['runTraining']> = delayedTraining(),
+  seedData?: (directory: string) => Promise<void>,
 ): Promise<RunningLabServer> {
   const directory = await mkdtemp(join(tmpdir(), 'birds-llm-server-'));
   temporaryDirectories.push(directory);
   const dist = join(directory, 'dist');
   const data = join(directory, 'data');
   await mkdir(dist, { recursive: true });
+  await mkdir(data, { recursive: true });
+  await seedData?.(data);
   await writeFile(
     join(dist, 'index.html'),
     '<!doctype html><meta name="birds-llm-lab-csrf" content="__BIRDS_LLM_LAB_CSRF__"><main>Lab</main>',
@@ -42,6 +47,54 @@ async function fixtureServer(
   });
   runningServers.push(server);
   return server;
+}
+
+async function seedEvidenceCorpus(directory: string): Promise<void> {
+  const row: CorpusRow = {
+    code: 'osprey',
+    name: 'Osprey',
+    sci: 'Pandion haliaetus',
+    order: 'Accipitriformes',
+    family: 'Pandionidae',
+    extract: 'The Osprey hunts above coastal water.',
+    sections: [{ title: 'Range', text: 'Found near many shorelines.' }],
+    field_craft: 'Private field craft text.',
+    tags: ['private-tag'],
+    split: 'test',
+  };
+  const corpus = Buffer.from(`${serializeCorpusRow(row)}\n`);
+  const manifest: CorpusManifest = {
+    formatVersion: 1,
+    exportedAt: '2026-10-06T12:00:00.000Z',
+    database: { host: '127.0.0.1', port: 15436, name: 'birds_test' },
+    sourceRows: 1,
+    emittedRows: 1,
+    skippedRows: 0,
+    skippedReasons: {},
+    malformedSectionsSkipped: 0,
+    splits: {
+      train: { documents: 0, bytes: 0 },
+      validation: { documents: 0, bytes: 0 },
+      test: { documents: 1, bytes: 0 },
+    },
+    sourceBytes: { wikipediaExtracts: 0, wikipediaSections: 0, fieldCraft: 0 },
+    corpusBytes: corpus.length,
+    corpusSha256: createHash('sha256').update(corpus).digest('hex'),
+    splitAlgorithm: 'sha256-bucket',
+    splitVersion: 'split-v1',
+    splitOverrides: ['osprey'],
+    templateVersion: 'corpus-v1',
+    sources: {
+      wikipediaExtracts: true,
+      wikipediaSections: true,
+      fieldCraftExported: true,
+      fieldCraftIncludedInTraining: false,
+    },
+    gitRevision: null,
+    warnings: [],
+  };
+  await writeFile(join(directory, 'corpus.jsonl'), corpus);
+  await writeFile(join(directory, 'manifest.json'), JSON.stringify(manifest));
 }
 
 function delayedTraining(): NonNullable<LabServerOptions['runTraining']> {
@@ -106,6 +159,34 @@ async function postJson(server: RunningLabServer, path: string, body: unknown): 
 }
 
 describe('loopback service', () => {
+  it('serves bounded evidence results from exported training fields through the fixed API', async () => {
+    const server = await fixtureServer(delayedExport(), delayedTraining(), seedEvidenceCorpus);
+    const response = await fetch(`${server.origin}/api/evidence/search?q=coastal&page=0`);
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result).toMatchObject({
+      indexedDocuments: 1,
+      pageSize: 20,
+      exactPhrase: {
+        total: 1,
+        hits: [{ code: 'osprey', split: 'test', field: 'Wikipedia extract' }],
+      },
+    });
+    expect((await fetch(`${server.origin}/api/evidence/search?q=private`)).status).toBe(200);
+    const hidden = await fetch(`${server.origin}/api/evidence/search?q=private`).then((item) =>
+      item.json(),
+    );
+    expect(hidden.normalizedTerms.total).toBe(0);
+    expect((await fetch(`${server.origin}/api/evidence/search?q=coastal&page=nope`)).status).toBe(
+      400,
+    );
+  });
+
+  it('reports evidence search unavailable before export', async () => {
+    const server = await fixtureServer(delayedExport());
+    expect((await fetch(`${server.origin}/api/evidence/search?q=osprey`)).status).toBe(409);
+  });
+
   it('requires an active checkpoint for inspection', async () => {
     const server = await fixtureServer(delayedExport());
     const response = await fetch(`${server.origin}/api/checkpoints/active/inspect`);

@@ -80,8 +80,9 @@ export const routes: readonly LabRoute[] = [
     path: '/evidence',
     label: 'Evidence',
     eyebrow: 'Evidence bench',
-    title: 'Compare generated claims with corpus evidence.',
-    summary: 'Separate plausible continuation mechanics from retrieved source evidence.',
+    title: 'Search what the exported corpus actually says.',
+    summary:
+      'Compare exact phrases, normalized terms, and species documents across the labeled corpus splits.',
     milestone: 'M6',
   },
 ];

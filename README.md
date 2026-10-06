@@ -3,16 +3,18 @@
 A local-only teaching app for inspecting how a small decoder-only transformer
 tokenizes bird text, trains, attends, predicts, generates, and hallucinates.
 
-Milestones 0–3 are implemented: the local app shell, read-only corpus workflow,
-secured loopback service, deterministic byte-pair tokenizer, trainable from-scratch
-transformer, and inspectable forward-pass, attention, and embeddings screens.
+Milestones 0–5 and the M6.1 corpus evidence search are implemented: the local app
+shell, read-only corpus workflow, secured loopback service, deterministic byte-pair
+tokenizer, trainable from-scratch transformer, inspectable forward pass and
+embeddings, seeded generation, and worker-based live training.
 
 The owner-facing app is available at [http://localhost:5301](http://localhost:5301).
 The Data workbench exports the corpus, trains, and selects checkpoints without
 requiring Terminal. The Tokenizer workbench exposes bytes, ids, and merge replay.
 The Forward pass, Attention, and Embeddings workbenches use the selected validated
-checkpoint and expose real model values. Sampling/generation, live browser training,
-and corpus-evidence screens are planned for Milestones 4–6.
+checkpoint and expose real model values. The Generation and Training workbenches
+show actual sampling and optimizer updates. The Evidence workbench searches
+exported corpus fields with source split and field labels.
 
 - [Original product plan](docs/plan.md)
 - [Implementation plan](docs/implementation-plan.md)
