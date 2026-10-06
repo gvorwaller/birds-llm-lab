@@ -5,6 +5,8 @@ import type { CheckpointInspectionBundle } from '../../src/lib/data/api-types';
 import type { CheckpointConfig, TokenizerArtifact } from '../../src/lib/data/schemas';
 import { encodeCheckpointWeights } from '../../src/lib/model/checkpoint';
 import { initializeParameters } from '../../src/lib/model/parameters';
+import { encodeText } from '../../src/lib/tokenizer/bpe';
+import { generateReplay } from '../../src/lib/generation/replay';
 
 const config: CheckpointConfig = {
   formatVersion: 1,
@@ -40,7 +42,7 @@ const config: CheckpointConfig = {
   sourceGitRevision: null,
 };
 
-async function mockInspection(page: Page): Promise<void> {
+async function mockInspection(page: Page): Promise<TokenizerArtifact> {
   const tokenizer = JSON.parse(
     await readFile(join(process.cwd(), 'src/assets/tokenizer-1024.json'), 'utf8'),
   ) as TokenizerArtifact;
@@ -75,6 +77,7 @@ async function mockInspection(page: Page): Promise<void> {
       await route.fulfill({ status: 404, json: { error: 'Unexpected API route.' } });
     }
   });
+  return tokenizer;
 }
 
 test('steps reversibly through real selected cells with keyboard at laptop widths', async ({
@@ -165,6 +168,100 @@ test('inspects embedding cells, deterministic PCA maps, and cosine neighbours', 
   await expect(
     page.getByRole('heading', { name: 'Nearest rows by cosine similarity' }),
   ).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBe(0);
+});
+
+test('matches Node sampling numbers and IDs in the browser and replays a sliding window', async ({
+  page,
+}) => {
+  const tokenizer = await mockInspection(page);
+  const prompt = Array.from({ length: 90 }, (_, index) =>
+    String.fromCharCode(33 + (index % 90)),
+  ).join('');
+  const promptIds = encodeText(prompt, tokenizer, { bos: true });
+  expect(promptIds.length).toBeGreaterThan(config.model.contextLength);
+  const expected = generateReplay(
+    promptIds,
+    42,
+    { temperature: 1, topK: 0, topP: 1 },
+    4,
+    initializeParameters(config.model, 123),
+    config.model,
+  );
+
+  await page.goto('/generation');
+  await expect(page.getByRole('heading', { name: 'Inspect a next-token draw' })).toBeVisible();
+  await page.getByLabel('Prompt').fill(prompt);
+  await page.getByLabel('Tokens to generate').fill('4');
+  await page.getByRole('button', { name: 'Generate and save replay' }).click();
+  await expect(page.getByTestId('generated-ids')).toHaveText(expected.generatedIds.join(', '));
+  await expect(page.getByTestId('retained-mass')).toHaveText(
+    expected.steps[0].distribution.retainedMass.toPrecision(8),
+  );
+  await expect(page.getByTestId('random-draw')).toHaveText(
+    expected.steps[0].draw.randomNumber.toPrecision(8),
+  );
+  await expect(page.getByTestId('selected-interval')).toHaveText(
+    `[${expected.steps[0].draw.intervalStart.toPrecision(8)}, ${expected.steps[0].draw.intervalEnd.toPrecision(8)})`,
+  );
+  const firstId = expected.steps[0].distribution.rankOrder[0];
+  const firstRow = page
+    .getByRole('table', { name: 'Vocabulary probabilities' })
+    .locator(`tr[data-token-id="${firstId}"]`);
+  await expect(firstRow).toHaveAttribute(
+    'data-before',
+    String(expected.steps[0].distribution.beforeFilters[firstId]),
+  );
+  await expect(firstRow).toHaveAttribute(
+    'data-after',
+    String(expected.steps[0].distribution.probabilities[firstId]),
+  );
+  await expect(firstRow).toHaveAttribute(
+    'data-interval-end',
+    String(expected.steps[0].distribution.cumulative[firstId]),
+  );
+  const firstPageIds = expected.steps[0].distribution.rankOrder.slice(0, 25);
+  const expectedRemainder =
+    1 - firstPageIds.reduce((sum, id) => sum + expected.steps[0].distribution.probabilities[id], 0);
+  await expect(page.getByTestId('remainder-after')).toHaveText(expectedRemainder.toPrecision(8));
+  await page.getByRole('button', { name: 'Next page →' }).click();
+  await expect(page.getByText('page 2 of 41')).toBeVisible();
+  await page.getByLabel('Search vocabulary').fill(String(expected.generatedIds[0]));
+  await expect(page.getByText(/matching tokens/)).toBeVisible();
+  await page.getByRole('button', { name: 'Next decision →' }).click();
+  await expect(page.getByRole('heading', { name: 'Decision 2 of 4' })).toBeVisible();
+  await expect(
+    page.getByText(`Dropped leading tokens (${expected.steps[1].dropped.length})`),
+  ).toBeVisible();
+  await page.getByRole('button', { name: '← Previous decision' }).click();
+  await expect(page.getByTestId('random-draw')).toHaveText(
+    expected.steps[0].draw.randomNumber.toPrecision(8),
+  );
+  await page.getByLabel('Temperature').fill('0.7');
+  await page.getByLabel('Top-k').fill('3');
+  await page.getByLabel('Top-p').fill('0.5');
+  await page.getByRole('button', { name: 'Inspect next token' }).click();
+  const filtered = generateReplay(
+    promptIds,
+    42,
+    { temperature: 0.7, topK: 3, topP: 0.5 },
+    1,
+    initializeParameters(config.model, 123),
+    config.model,
+  );
+  await expect(page.getByTestId('generated-ids')).toHaveText(String(filtered.generatedIds[0]));
+  await expect(page.getByTestId('retained-mass')).toHaveText(
+    filtered.steps[0].distribution.retainedMass.toPrecision(8),
+  );
+  await expect(page.getByTestId('removed-mass')).toHaveText(
+    filtered.steps[0].distribution.removedMass.toPrecision(8),
+  );
+  await expect(page.getByTestId('selected-interval')).toHaveText(
+    `[${filtered.steps[0].draw.intervalStart.toPrecision(8)}, ${filtered.steps[0].draw.intervalEnd.toPrecision(8)})`,
+  );
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );

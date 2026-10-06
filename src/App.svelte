@@ -6,6 +6,7 @@
   import ForwardPass from './components/ForwardPass.svelte';
   import AttentionExplorer from './components/AttentionExplorer.svelte';
   import EmbeddingsLab from './components/EmbeddingsLab.svelte';
+  import GenerationLab from './components/GenerationLab.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
   let pathname = $state('/');
@@ -129,6 +130,8 @@
       <ForwardPass />
     {:else if currentRoute.path === '/attention'}
       <AttentionExplorer />
+    {:else if currentRoute.path === '/generation'}
+      <GenerationLab />
     {:else}
       <section class="placeholder" aria-labelledby="placeholder-title">
         <div>
