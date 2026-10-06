@@ -277,6 +277,16 @@ async function routeApi(
     return;
   }
 
+  if (request.method === 'GET' && pathname === '/api/evidence/verified-example') {
+    try {
+      json(response, 200, await evidenceIndex.verifiedExampleEvidence());
+    } catch (error) {
+      if (error instanceof EvidenceUnavailableError) reject(response, 409, error.message);
+      else throw error;
+    }
+    return;
+  }
+
   if (request.method === 'POST' && pathname === '/api/corpus/export') {
     try {
       json(response, 202, await coordinator.start());

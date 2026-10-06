@@ -154,6 +154,27 @@ describe('corpus evidence index', () => {
     expect((await index.search('ocean', 0)).exportedAt).toBe(manifest.exportedAt);
   });
 
+  it('counts the generated order and family template span in train documents only', async () => {
+    const { index } = await fixture([
+      { ...row('one', 'One Bird', 'train', 'Text.'), order: 'Passeriformes', family: 'Birdidae' },
+      { ...row('two', 'Two Bird', 'validation', 'Text.'), order: 'Passeriformes' },
+      { ...row('three', 'Three Bird', 'train', 'Text.'), order: 'Falconiformes' },
+      { ...row('target', 'Target Bird', 'test', 'Text.'), order: 'Falconiformes' },
+    ]);
+    const evidence = await index.cooccurrence('target', 'Passeriformes');
+    expect(evidence.trainDocuments).toBe(2);
+    expect(evidence.trainSpanDocuments).toBe(1);
+    expect(evidence.exactTemplateSpan).toBe('\nOrder: Passeriformes\nFamily: ');
+    expect(evidence.trainExamples).toMatchObject([
+      { code: 'one', split: 'train', field: 'Order and family in training template' },
+    ]);
+    expect(evidence.target).toMatchObject({
+      code: 'target',
+      split: 'test',
+      order: 'Falconiformes',
+    });
+  });
+
   it('rejects malformed queries and a corpus that does not match its manifest', async () => {
     const { index, corpusPath } = await fixture([row('one', 'One Bird', 'train', 'Ocean.')]);
     await expect(index.search('', 0)).rejects.toBeInstanceOf(EvidenceQueryError);

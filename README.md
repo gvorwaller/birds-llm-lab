@@ -3,7 +3,7 @@
 A local-only teaching app for inspecting how a small decoder-only transformer
 tokenizes bird text, trains, attends, predicts, generates, and hallucinates.
 
-Milestones 0–5 and the M6.1 corpus evidence search are implemented: the local app
+Milestones 0–5 and M6.1–M6.2 are implemented: the local app
 shell, read-only corpus workflow, secured loopback service, deterministic byte-pair
 tokenizer, trainable from-scratch transformer, inspectable forward pass and
 embeddings, seeded generation, and worker-based live training.
@@ -14,7 +14,9 @@ requiring Terminal. The Tokenizer workbench exposes bytes, ids, and merge replay
 The Forward pass, Attention, and Embeddings workbenches use the selected validated
 checkpoint and expose real model values. The Generation and Training workbenches
 show actual sampling and optimizer updates. The Evidence workbench searches
-exported corpus fields with source split and field labels.
+exported corpus fields with source split and field labels. It also replays a
+verified checkpoint example and compares its selected token with the exported
+corpus and the held-out species record.
 
 - [Original product plan](docs/plan.md)
 - [Implementation plan](docs/implementation-plan.md)
@@ -36,6 +38,8 @@ Use the project-local Node 22 runtime installed through npm scripts:
 - `npm run verify:m0` — artifact reconciliation and local-only/credential scan.
 - `npm run verify:m1` — full-corpus tokenizer round-trip and determinism gate.
 - `npm run verify:m2-determinism` — fixed-seed training/resume determinism gate.
+- `npm run verify:m6-example` — replay the saved example against the local
+  `ready-v1` checkpoint and verify its corpus evidence.
 - `npm run test:browser` — keyboard/layout smoke at 1024 px and 1280 px widths.
 - `npm run service:status` — report the LaunchAgent state.
 

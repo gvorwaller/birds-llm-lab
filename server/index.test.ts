@@ -187,6 +187,15 @@ describe('loopback service', () => {
     expect((await fetch(`${server.origin}/api/evidence/search?q=osprey`)).status).toBe(409);
   });
 
+  it('refuses the saved example when the exported corpus is different', async () => {
+    const server = await fixtureServer(delayedExport(), delayedTraining(), seedEvidenceCorpus);
+    const response = await fetch(`${server.origin}/api/evidence/verified-example`);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: 'The current corpus export does not match the verified ready-v1 example.',
+    });
+  });
+
   it('requires an active checkpoint for inspection', async () => {
     const server = await fixtureServer(delayedExport());
     const response = await fetch(`${server.origin}/api/checkpoints/active/inspect`);

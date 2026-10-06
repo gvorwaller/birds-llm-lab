@@ -11,7 +11,9 @@ import type {
   EvidenceHit,
   EvidenceMatchPage,
   EvidenceSearchResponse,
+  OrderCooccurrenceEvidence,
 } from '../../src/lib/data/api-types.js';
+import { KESTREL_EXAMPLE } from '../../src/lib/evidence/saved-example.js';
 
 export const EVIDENCE_PAGE_SIZE = 20;
 const MAX_QUERY_LENGTH = 160;
@@ -31,6 +33,8 @@ interface IndexedDocument {
   readonly name: string;
   readonly sci: string;
   readonly split: CorpusSplit;
+  readonly order: string | null;
+  readonly family: string | null;
 }
 
 interface IndexedField {
@@ -117,7 +121,14 @@ function buildIndex(corpus: Buffer, manifest: CorpusManifest): LoadedIndex {
     if (line.length === 0) continue;
     const row = parseCorpusRow(JSON.parse(line) as unknown);
     const documentId = documents.length;
-    documents.push({ code: row.code, name: row.name, sci: row.sci, split: row.split });
+    documents.push({
+      code: row.code,
+      name: row.name,
+      sci: row.sci,
+      split: row.split,
+      order: row.order,
+      family: row.family,
+    });
     for (const field of fieldsFor(row, documentId)) {
       const fieldId = fields.length;
       fields.push(field);
@@ -231,6 +242,44 @@ export function searchIndex(
   };
 }
 
+function orderCooccurrence(
+  index: LoadedIndex,
+  speciesCode: string,
+  generatedOrder: string,
+): OrderCooccurrenceEvidence {
+  const target = index.documents.find((document) => document.code === speciesCode);
+  if (!target?.order) {
+    throw new EvidenceUnavailableError('The example species is absent from this export.');
+  }
+  const train = index.documents.filter((document) => document.split === 'train');
+  // The fixed corpus-v1 template writes these adjacent lines for every document.
+  const matching = train.filter((document) => document.order === generatedOrder);
+  return {
+    corpusSha256: index.corpusSha256,
+    trainDocuments: train.length,
+    exactTemplateSpan: `\nOrder: ${generatedOrder}\nFamily: `,
+    trainSpanDocuments: matching.length,
+    trainExamples: matching.slice(0, 3).map((document) => ({
+      code: document.code,
+      name: document.name,
+      sci: document.sci,
+      split: document.split,
+      field: 'Order and family in training template',
+      snippet: `Order: ${document.order}\nFamily: ${document.family ?? ''}`,
+    })),
+    target: {
+      code: target.code,
+      name: target.name,
+      sci: target.sci,
+      split: target.split,
+      field: 'Order and family in exported document',
+      snippet: `Order: ${target.order}\nFamily: ${target.family ?? ''}`,
+      order: target.order,
+      family: target.family,
+    },
+  };
+}
+
 export class CorpusEvidenceIndex {
   private cached: LoadedIndex | null = null;
   private loading: { hash: string; promise: Promise<LoadedIndex> } | null = null;
@@ -242,6 +291,33 @@ export class CorpusEvidenceIndex {
 
   async search(query: string, page: number): Promise<EvidenceSearchResponse> {
     validateSearch(query, page);
+    return searchIndex(await this.load(), query, page);
+  }
+
+  async cooccurrence(
+    speciesCode: string,
+    generatedOrder: string,
+  ): Promise<OrderCooccurrenceEvidence> {
+    return orderCooccurrence(await this.load(), speciesCode, generatedOrder);
+  }
+
+  async verifiedExampleEvidence(): Promise<OrderCooccurrenceEvidence> {
+    const index = await this.load();
+    if (index.corpusSha256 !== KESTREL_EXAMPLE.corpusSha256) {
+      throw new EvidenceUnavailableError(
+        'The current corpus export does not match the verified ready-v1 example.',
+      );
+    }
+    const evidence = orderCooccurrence(index, KESTREL_EXAMPLE.speciesCode, 'Passeriformes');
+    if (evidence.target.order !== KESTREL_EXAMPLE.referenceOrder) {
+      throw new EvidenceUnavailableError(
+        'The example species order does not match the verified export.',
+      );
+    }
+    return evidence;
+  }
+
+  private async load(): Promise<LoadedIndex> {
     let manifest: CorpusManifest;
     try {
       manifest = parseCorpusManifest(
@@ -278,6 +354,6 @@ export class CorpusEvidenceIndex {
     if (this.cached.exportedAt !== manifest.exportedAt) {
       this.cached = { ...this.cached, exportedAt: manifest.exportedAt };
     }
-    return searchIndex(this.cached, query, page);
+    return this.cached;
   }
 }

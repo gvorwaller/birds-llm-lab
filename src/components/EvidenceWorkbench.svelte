@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import HallucinationDemo from './HallucinationDemo.svelte';
   import { getCorpusManifest, searchCorpusEvidence } from '../lib/data/api';
   import type { EvidenceMatchPage, EvidenceSearchResponse } from '../lib/data/api-types';
   import type { CorpusManifest } from '../lib/data/schemas';
@@ -137,6 +138,8 @@
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </div>
+
+  <HallucinationDemo />
 
   {#if searching}<p role="status">Searching the local corpus…</p>{/if}
   {#if result}

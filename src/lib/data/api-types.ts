@@ -32,6 +32,15 @@ export interface EvidenceSearchResponse {
   speciesDocuments: EvidenceMatchPage;
 }
 
+export interface OrderCooccurrenceEvidence {
+  corpusSha256: string;
+  trainDocuments: number;
+  exactTemplateSpan: string;
+  trainSpanDocuments: number;
+  trainExamples: EvidenceHit[];
+  target: EvidenceHit & { order: string; family: string | null };
+}
+
 export type ExportJobStatus =
   'queued' | 'running' | 'cancelling' | 'cancelled' | 'succeeded' | 'failed' | 'interrupted';
 

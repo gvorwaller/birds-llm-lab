@@ -2,6 +2,7 @@ import type {
   CheckpointList,
   CheckpointInspectionBundle,
   EvidenceSearchResponse,
+  OrderCooccurrenceEvidence,
   ExportJobState,
   ServiceStatus,
   TrainingJobState,
@@ -39,6 +40,10 @@ export function getServiceStatus(): Promise<ServiceStatus> {
 export function searchCorpusEvidence(query: string, page = 0): Promise<EvidenceSearchResponse> {
   const parameters = new URLSearchParams({ q: query, page: String(page) });
   return requestJson(`/api/evidence/search?${parameters}`);
+}
+
+export function getVerifiedExampleEvidence(): Promise<OrderCooccurrenceEvidence> {
+  return requestJson('/api/evidence/verified-example');
 }
 
 export async function getCorpusManifest(): Promise<CorpusManifest | null> {
