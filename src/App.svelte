@@ -3,6 +3,9 @@
   import DataWorkbench from './components/DataWorkbench.svelte';
   import CheckpointPicker from './components/CheckpointPicker.svelte';
   import TokenizerLab from './components/TokenizerLab.svelte';
+  import ForwardPass from './components/ForwardPass.svelte';
+  import AttentionExplorer from './components/AttentionExplorer.svelte';
+  import EmbeddingsLab from './components/EmbeddingsLab.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
   let pathname = $state('/');
@@ -120,6 +123,12 @@
       <DataWorkbench />
     {:else if currentRoute.path === '/tokenizer'}
       <TokenizerLab />
+    {:else if currentRoute.path === '/embeddings'}
+      <EmbeddingsLab />
+    {:else if currentRoute.path === '/forward-pass'}
+      <ForwardPass />
+    {:else if currentRoute.path === '/attention'}
+      <AttentionExplorer />
     {:else}
       <section class="placeholder" aria-labelledby="placeholder-title">
         <div>

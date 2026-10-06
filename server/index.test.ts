@@ -106,6 +106,12 @@ async function postJson(server: RunningLabServer, path: string, body: unknown): 
 }
 
 describe('loopback service', () => {
+  it('requires an active checkpoint for inspection', async () => {
+    const server = await fixtureServer(delayedExport());
+    const response = await fetch(`${server.origin}/api/checkpoints/active/inspect`);
+    expect(response.status).toBe(404);
+  });
+
   it('serves the SPA fallback with an embedded per-process token and restrictive CSP', async () => {
     const server = await fixtureServer(delayedExport());
     const response = await fetch(`${server.origin}/data`);

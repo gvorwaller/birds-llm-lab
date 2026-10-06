@@ -1,6 +1,13 @@
+import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import type { CheckpointList, CheckpointSummary } from '../../src/lib/data/api-types';
+import type {
+  CheckpointInspectionBundle,
+  CheckpointList,
+  CheckpointSummary,
+} from '../../src/lib/data/api-types';
+import { parseTokenizerArtifact } from '../../src/lib/data/schemas';
+import { encodeCheckpointWeights } from '../../src/lib/model/checkpoint';
 import { loadCheckpoint } from '../checkpoint-store';
 
 const CHECKPOINT_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/;
@@ -116,6 +123,37 @@ export class CheckpointCatalog {
     this.recoveryWarningValue = null;
     await this.persist();
     return this.list();
+  }
+
+  async inspectionBundle(tokenizerPath: string): Promise<CheckpointInspectionBundle | null> {
+    const id = this.activeId;
+    if (id === null) return null;
+    const list = await this.list();
+    if (!list.checkpoints.some((checkpoint) => checkpoint.id === id)) return null;
+    const checkpoint = await loadCheckpoint(join(this.checkpointDirectory, id));
+    const tokenizerBytes = await readFile(tokenizerPath);
+    const tokenizerHash = createHash('sha256').update(tokenizerBytes).digest('hex');
+    if (tokenizerHash !== checkpoint.config.tokenizerSha256) {
+      throw new Error(
+        'The active checkpoint tokenizer hash does not match the installed tokenizer.',
+      );
+    }
+    const tokenizer = parseTokenizerArtifact(
+      JSON.parse(tokenizerBytes.toString('utf8')) as unknown,
+    );
+    if (tokenizer.tokens.length !== checkpoint.config.model.vocabSize) {
+      throw new Error(
+        'The active checkpoint vocabulary size does not match the installed tokenizer.',
+      );
+    }
+    const weights = encodeCheckpointWeights(checkpoint.config.model, checkpoint.parameters);
+    return {
+      checkpointId: id,
+      config: checkpoint.config,
+      weightIndex: weights.index,
+      weightsBase64: Buffer.from(weights.bytes).toString('base64'),
+      tokenizer,
+    };
   }
 
   private async persist(): Promise<void> {

@@ -20,6 +20,7 @@ import {
 } from './block';
 import { unembeddingBackward, unembeddingForward, type UnembeddingCache } from './layers';
 import type { ParameterRegistry } from './parameters';
+import { buildForwardTrace, type ForwardTrace } from '../trace/forward-trace';
 
 export interface LanguageModelCache {
   readonly config: ModelConfig;
@@ -38,6 +39,7 @@ export interface LanguageModelForwardResult {
   readonly logits: Tensor;
   readonly loss: number | null;
   readonly cache: LanguageModelCache;
+  readonly trace?: ForwardTrace;
 }
 
 export interface TiedEmbeddingGradientContributions {
@@ -83,6 +85,7 @@ export function languageModelForward(
   registry: ParameterRegistry,
   config: ModelConfig,
   targets?: readonly number[],
+  options?: { readonly trace?: boolean },
 ): LanguageModelForwardResult {
   const [batchSize, sequenceLength] = shape;
   if (!Number.isInteger(batchSize) || batchSize <= 0) {
@@ -146,21 +149,23 @@ export function languageModelForward(
     loss = lossResult.output;
     crossEntropy = lossResult.cache;
   }
+  const cache: LanguageModelCache = {
+    config,
+    registry,
+    batchSize,
+    sequenceLength,
+    tokenEmbedding: tokenEmbedding.cache,
+    positionEmbedding: positionEmbedding.cache,
+    blocks,
+    finalLayerNorm: finalLayerNorm.cache,
+    unembedding: unembedding.cache,
+    crossEntropy,
+  };
   return {
     logits: unembedding.output,
     loss,
-    cache: {
-      config,
-      registry,
-      batchSize,
-      sequenceLength,
-      tokenEmbedding: tokenEmbedding.cache,
-      positionEmbedding: positionEmbedding.cache,
-      blocks,
-      finalLayerNorm: finalLayerNorm.cache,
-      unembedding: unembedding.cache,
-      crossEntropy,
-    },
+    cache,
+    ...(options?.trace ? { trace: buildForwardTrace(tokenIds, cache, unembedding.output) } : {}),
   };
 }
 

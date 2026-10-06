@@ -1,4 +1,9 @@
-import type { CorpusManifest } from './schemas';
+import type {
+  CheckpointConfig,
+  CorpusManifest,
+  TokenizerArtifact,
+  WeightIndexArtifact,
+} from './schemas';
 
 export type ExportJobStatus =
   'queued' | 'running' | 'cancelling' | 'cancelled' | 'succeeded' | 'failed' | 'interrupted';
@@ -79,4 +84,12 @@ export interface CheckpointList {
   checkpoints: CheckpointSummary[];
   activeCheckpointId: string | null;
   recoveryWarning: string | null;
+}
+
+export interface CheckpointInspectionBundle {
+  checkpointId: string;
+  config: CheckpointConfig;
+  weightIndex: WeightIndexArtifact;
+  weightsBase64: string;
+  tokenizer: TokenizerArtifact;
 }

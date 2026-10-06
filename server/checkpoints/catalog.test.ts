@@ -1,10 +1,12 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckpointConfig, TrainingLogArtifact } from '../../src/lib/data/schemas';
 import { DEFAULT_MODEL_CONFIG } from '../../src/lib/model/config';
 import { initializeParameters } from '../../src/lib/model/parameters';
+import { decodeCheckpointWeights } from '../../src/lib/model/checkpoint';
 import { writeCheckpoint } from '../checkpoint-store';
 import { CheckpointCatalog } from './catalog';
 
@@ -116,5 +118,49 @@ describe('checkpoint catalog', () => {
     await catalog.initialize();
     await expect(catalog.select('../outside')).rejects.toThrow('Invalid checkpoint id');
     await expect(catalog.select('missing')).rejects.toThrow('not found or failed validation');
+  });
+
+  it('serves only the selected validated weights with a matching tokenizer', async () => {
+    const paths = await fixture();
+    const tokenizerPath = join(process.cwd(), 'src/assets/tokenizer-1024.json');
+    const tokenizerBytes = await readFile(tokenizerPath);
+    const matching = {
+      ...config,
+      tokenizerSha256: createHash('sha256').update(tokenizerBytes).digest('hex'),
+    };
+    await writeCheckpoint(
+      join(paths.checkpoints, 'valid-one'),
+      matching,
+      initializeParameters(DEFAULT_MODEL_CONFIG, 1),
+      log,
+    );
+    const catalog = new CheckpointCatalog(paths.checkpoints, paths.selection);
+    await catalog.initialize();
+    expect(await catalog.inspectionBundle(tokenizerPath)).toBeNull();
+    await catalog.select('valid-one');
+    const bundle = await catalog.inspectionBundle(tokenizerPath);
+    if (!bundle) throw new Error('Expected inspection bundle.');
+    expect(bundle.checkpointId).toBe('valid-one');
+    expect(bundle.config.trainingStep).toBe(2);
+    const weights = Buffer.from(bundle.weightsBase64, 'base64');
+    expect(
+      decodeCheckpointWeights(bundle.config.model, bundle.weightIndex, weights).elementCount,
+    ).toBe(169_728);
+    const badTokenizerPath = join(paths.root, 'bad-tokenizer.json');
+    await writeFile(badTokenizerPath, 'bad');
+    await expect(catalog.inspectionBundle(badTokenizerPath)).rejects.toThrow(
+      'tokenizer hash does not match',
+    );
+    const smallerModel = { ...DEFAULT_MODEL_CONFIG, vocabSize: 259 };
+    await writeCheckpoint(
+      join(paths.checkpoints, 'wrong-vocabulary'),
+      { ...matching, model: smallerModel },
+      initializeParameters(smallerModel, 1),
+      log,
+    );
+    await catalog.select('wrong-vocabulary');
+    await expect(catalog.inspectionBundle(tokenizerPath)).rejects.toThrow(
+      'vocabulary size does not match',
+    );
   });
 });

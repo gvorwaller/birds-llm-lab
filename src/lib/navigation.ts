@@ -35,11 +35,28 @@ export const routes: readonly LabRoute[] = [
     milestone: 'M1',
   },
   {
+    path: '/embeddings',
+    label: 'Embeddings',
+    eyebrow: 'Vector bench',
+    title: 'Inspect a learned token row.',
+    summary:
+      'Compare reconstructed initial and stored trained embeddings, neighbours, and PCA positions.',
+    milestone: 'M3',
+  },
+  {
     path: '/forward-pass',
     label: 'Forward pass',
     eyebrow: 'Model bench',
     title: 'Trace one prompt through every layer.',
     summary: 'Inspect embeddings, attention, residual updates, and logits using real values.',
+    milestone: 'M3',
+  },
+  {
+    path: '/attention',
+    label: 'Attention',
+    eyebrow: 'Attention bench',
+    title: 'Inspect where each position looks.',
+    summary: 'Compare per-head and average attention probabilities for a real prompt.',
     milestone: 'M3',
   },
   {

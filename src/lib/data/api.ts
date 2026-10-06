@@ -1,5 +1,6 @@
 import type {
   CheckpointList,
+  CheckpointInspectionBundle,
   ExportJobState,
   ServiceStatus,
   TrainingJobState,
@@ -55,6 +56,10 @@ export function cancelExportJob(id: string): Promise<ExportJobState> {
 
 export function getCheckpoints(): Promise<CheckpointList> {
   return requestJson('/api/checkpoints');
+}
+
+export function getActiveCheckpointForInspection(): Promise<CheckpointInspectionBundle> {
+  return requestJson('/api/checkpoints/active/inspect');
 }
 
 export function selectCheckpoint(id: string): Promise<CheckpointList> {

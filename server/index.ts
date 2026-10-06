@@ -227,6 +227,7 @@ async function routeApi(
   trainingCoordinator: TrainingJobCoordinator,
   checkpointCatalog: CheckpointCatalog,
   manifestPath: string,
+  tokenizerPath: string,
 ): Promise<void> {
   if (request.method === 'GET' && pathname === '/api/status') {
     const manifest = await readManifest(manifestPath);
@@ -288,6 +289,21 @@ async function routeApi(
 
   if (request.method === 'GET' && pathname === '/api/checkpoints') {
     json(response, 200, await checkpointCatalog.list());
+    return;
+  }
+
+  if (request.method === 'GET' && pathname === '/api/checkpoints/active/inspect') {
+    try {
+      const bundle = await checkpointCatalog.inspectionBundle(tokenizerPath);
+      if (bundle === null) reject(response, 404, 'Select a validated checkpoint first.');
+      else json(response, 200, bundle);
+    } catch (error) {
+      reject(
+        response,
+        409,
+        error instanceof Error ? error.message : 'Checkpoint inspection unavailable.',
+      );
+    }
     return;
   }
 
@@ -399,6 +415,7 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
           trainingCoordinator,
           checkpointCatalog,
           join(dataDirectory, 'manifest.json'),
+          join(projectDirectory, 'src/assets/tokenizer-1024.json'),
         );
       } else {
         await serveStatic(request, response, url.pathname, distDirectory, csrfToken);
