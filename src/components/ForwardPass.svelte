@@ -110,6 +110,11 @@
     <p class="eyebrow">Fixed example · active checkpoint</p>
     <h2>Follow one real calculation</h2>
     <p>“{prompt}”</p>
+    <p class="glossary-ref">
+      Terms: <a href="/glossary#matrix-multiply">matrix multiply</a> ·
+      <a href="/glossary#residual-stream">residual stream</a>
+      · <a href="/glossary#layernorm">LayerNorm</a>
+    </p>
     {#if inspection}<small
         >Checkpoint {inspection.checkpointId} · training step {inspection.config
           .trainingStep}</small

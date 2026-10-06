@@ -138,6 +138,10 @@
       Each decision recomputes the model on the current context. The controls and seed are saved
       with the replay.
     </p>
+    <p class="glossary-ref">
+      Terms: <a href="/glossary#logit">logit</a> · <a href="/glossary#temperature">temperature</a> ·
+      <a href="/glossary#context-window">context window</a>
+    </p>
     {#if inspection}<small
         >Checkpoint {inspection.checkpointId} · training step {inspection.config
           .trainingStep}</small

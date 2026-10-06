@@ -130,6 +130,10 @@
       Each row is a query position. Each column is a key position. A value is the fraction of that
       head’s weighted mix assigned to that key.
     </p>
+    <p class="glossary-ref">
+      Terms: <a href="/glossary#attention">attention</a> · <a href="/glossary#head">head</a> ·
+      <a href="/glossary#softmax">softmax</a>
+    </p>
     <label for="preset-prompt">Example prompt</label>
     <select
       id="preset-prompt"

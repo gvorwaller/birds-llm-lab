@@ -92,6 +92,9 @@
       </fieldset>
     </div>
 
+    <p class="glossary-ref">
+      Terms: <a href="/glossary#token">token</a> · <a href="/glossary#vocabulary">vocabulary</a>
+    </p>
     <label class="field-label" for="tokenizer-input">Input text</label>
     <textarea id="tokenizer-input" bind:value={input} rows="4" spellcheck="false"></textarea>
 
@@ -241,7 +244,7 @@
   </section>
 
   <section class="lab-panel explanation-panel" aria-labelledby="explanation-heading">
-    <p class="eyebrow">Mechanism, not metaphor</p>
+    <p class="eyebrow">Literal mechanism</p>
     <h2 id="explanation-heading">Why names split differently</h2>
     <details open>
       <summary>What’s happening</summary>

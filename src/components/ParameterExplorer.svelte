@@ -160,6 +160,10 @@
       tree comes from the checkpoint weight index. Colors show sign and relative magnitude; the
       selected cell shows the stored number.
     </p>
+    <p class="glossary-ref">
+      Terms: <a href="/glossary#parameter-weight">parameter / weight</a> ·
+      <a href="/glossary#bias">bias</a>
+    </p>
     {#if loading}<p role="status">Loading and summarizing checkpoint weights…</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if !loading && !overview && !error}<p>Select a validated checkpoint in the sidebar.</p>{/if}
@@ -249,6 +253,14 @@
             >{formatTraceValue(selected.max, 4)}</span
           >
         </p>
+        <details class="histogram-counts">
+          <summary>Read histogram bin counts</summary>
+          <ol>
+            {#each selected.histogram as count, bin}
+              <li>Bin {bin + 1}: {count.toLocaleString()} values</li>
+            {/each}
+          </ol>
+        </details>
         <h3>Weight heatmap</h3>
         <p class="note">
           Positive values are green, negative values orange. Brightness uses the largest absolute

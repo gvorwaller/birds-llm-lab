@@ -223,6 +223,11 @@
       different names. These short illustrative lines are separate from the exported bird corpus and
       the checkpoint selected in the sidebar.
     </p>
+    <p class="glossary-ref">
+      Terms: <a href="/glossary#loss">loss</a> · <a href="/glossary#gradient">gradient</a> ·
+      <a href="/glossary#adam">AdamW</a>
+      · <a href="/glossary#validation-set">validation set</a>
+    </p>
     <div class="setup">
       <label for="training-preset">Preset</label>
       <select

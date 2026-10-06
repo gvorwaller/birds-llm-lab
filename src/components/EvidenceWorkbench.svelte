@@ -104,6 +104,10 @@
       Wikipedia extracts, and section titles and text. Exported field craft and tags are excluded.
       Results can come from train, validation, or test; only the train split updated the model.
     </p>
+    <p class="glossary-ref">
+      Terms: <a href="/glossary#hallucination">hallucination</a> ·
+      <a href="/glossary#validation-set">validation set</a>
+    </p>
     {#if loadingManifest}
       <p role="status">Checking for an exported corpus…</p>
     {:else if manifest}

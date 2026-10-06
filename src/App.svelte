@@ -10,6 +10,7 @@
   import TrainingProtocolBench from './components/TrainingProtocolBench.svelte';
   import EvidenceWorkbench from './components/EvidenceWorkbench.svelte';
   import ParameterExplorer from './components/ParameterExplorer.svelte';
+  import Glossary from './components/Glossary.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
   let pathname = $state('/');
@@ -141,6 +142,8 @@
       <EvidenceWorkbench />
     {:else if currentRoute.path === '/parameters'}
       <ParameterExplorer />
+    {:else if currentRoute.path === '/glossary'}
+      <Glossary />
     {:else}
       <section class="placeholder" aria-labelledby="placeholder-title">
         <div>

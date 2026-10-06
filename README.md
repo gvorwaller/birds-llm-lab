@@ -3,7 +3,7 @@
 A local-only teaching app for inspecting how a small decoder-only transformer
 tokenizes bird text, trains, attends, predicts, generates, and hallucinates.
 
-Milestones 0–5 and M6.1–M6.3 are implemented: the local app
+Milestones 0–6 are implemented: the local app
 shell, read-only corpus workflow, secured loopback service, deterministic byte-pair
 tokenizer, trainable from-scratch transformer, inspectable forward pass and
 embeddings, seeded generation, and worker-based live training.
@@ -19,6 +19,8 @@ verified checkpoint example and compares its selected token with the exported
 corpus and the held-out species record.
 The Parameters workbench covers every named tensor in the selected checkpoint,
 shows distribution statistics and a bounded heatmap, and links to its forward trace.
+The always-reachable Glossary defines every term from the original plan with
+plain language, applicable formulas, and links into the workbenches.
 
 - [Original product plan](docs/plan.md)
 - [Implementation plan](docs/implementation-plan.md)

@@ -94,6 +94,15 @@ export const routes: readonly LabRoute[] = [
       'Browse the checkpoint registry, distribution, and bounded heatmap, then follow a tensor into the forward trace.',
     milestone: 'M6',
   },
+  {
+    path: '/glossary',
+    label: 'Glossary',
+    eyebrow: 'Reference bench',
+    title: 'The words behind the numbers.',
+    summary:
+      'Plain definitions, formulas, and links to the workbench where each mechanism appears.',
+    milestone: 'M6',
+  },
 ];
 
 export function normalizePath(pathname: string): string {

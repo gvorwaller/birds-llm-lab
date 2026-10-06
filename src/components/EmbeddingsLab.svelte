@@ -104,6 +104,10 @@
       An embedding is a learned row of {width || 'model-width'} Float32 numbers. Search by token id or
       visible text; the selected row and neighbours below use the active checkpoint.
     </p>
+    <p class="glossary-ref">
+      Terms: <a href="/glossary#embedding">embedding</a> ·
+      <a href="/glossary#parameter-weight">parameter</a>
+    </p>
     <label for="embedding-search">Search tokens</label>
     <input id="embedding-search" bind:value={query} placeholder="Token text or id" />
     <p>{matches.length} matching tokens</p>
