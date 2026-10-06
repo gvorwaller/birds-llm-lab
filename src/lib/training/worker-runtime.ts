@@ -3,8 +3,9 @@ import { SeededRandom } from '../math/rng';
 import { decodeCheckpointWeights, encodeCheckpointWeights } from '../model/checkpoint';
 import { languageModelBackward, languageModelForward } from '../model/model';
 import { AdamWOptimizer, learningRateAtStep } from '../model/optimizer';
-import { initializeParameters, type ParameterRegistry } from '../model/parameters';
+import { initializeParameters, parameterSpecs, type ParameterRegistry } from '../model/parameters';
 import { deterministicLanguageModelBatches, type LanguageModelBatch } from './batches';
+import { selectedWeightSnapshot, trainingSample, validationLoss } from './live-metrics';
 import {
   LIVE_TRAINING_PROTOCOL_VERSION as VERSION,
   type LiveTrainingCheckpoint,
@@ -68,15 +69,61 @@ function validatedConfig(input: LiveTrainingConfig): {
   if (!Array.isArray(input.sequences) || input.sequences.length === 0) {
     throw new Error('Training requires tokenized sequences.');
   }
-  const sequences = input.sequences.map((sequence, sequenceIndex) => {
-    if (!Array.isArray(sequence)) throw new Error(`Sequence ${sequenceIndex} must be an array.`);
-    return sequence.map((id, index) => {
-      if (!Number.isInteger(id) || id < 0 || id >= model.vocabSize) {
-        throw new Error(`Sequence ${sequenceIndex} has invalid token ID at ${index}.`);
-      }
-      return id;
+  const validateSequences = (source: readonly (readonly number[])[], label: string): number[][] =>
+    source.map((sequence, sequenceIndex) => {
+      if (!Array.isArray(sequence)) throw new Error(`Sequence ${sequenceIndex} must be an array.`);
+      return sequence.map((id, index) => {
+        if (!Number.isInteger(id) || id < 0 || id >= model.vocabSize) {
+          throw new Error(`${label} sequence ${sequenceIndex} has invalid token ID at ${index}.`);
+        }
+        return id;
+      });
     });
-  });
+  const sequences = validateSequences(input.sequences, 'Training');
+  const validationSequences = input.validationSequences
+    ? validateSequences(input.validationSequences, 'Validation')
+    : undefined;
+  if (
+    validationSequences &&
+    deterministicLanguageModelBatches(
+      validationSequences,
+      input.batchSize,
+      model.contextLength,
+      input.seed,
+      0,
+    ).length === 0
+  ) {
+    throw new Error('Validation sequences contain no next-token examples.');
+  }
+  const samplePromptIds = input.samplePromptIds ? [...input.samplePromptIds] : undefined;
+  if (samplePromptIds) {
+    if (
+      samplePromptIds.length === 0 ||
+      samplePromptIds.some((id) => !Number.isInteger(id) || id < 0 || id >= model.vocabSize)
+    ) {
+      throw new Error('Sample prompt needs valid token IDs.');
+    }
+    if (
+      !Number.isInteger(input.sampleNewTokens) ||
+      (input.sampleNewTokens ?? 0) < 1 ||
+      (input.sampleNewTokens ?? 0) > 32
+    ) {
+      throw new Error('Sample length must be an integer from 1 to 32.');
+    }
+  } else if (input.sampleNewTokens !== undefined) {
+    throw new Error('Sample length requires a sample prompt.');
+  }
+  if (
+    input.selectedWeightName !== undefined &&
+    !parameterSpecs(model).some(
+      (specification) =>
+        specification.name === input.selectedWeightName &&
+        specification.shape.length === 2 &&
+        specification.shape[0] * specification.shape[1] <= 1_024,
+    )
+  ) {
+    throw new Error('Selected weight must name a model matrix of at most 1,024 cells.');
+  }
   const batches = deterministicLanguageModelBatches(
     sequences,
     input.batchSize,
@@ -88,6 +135,9 @@ function validatedConfig(input: LiveTrainingConfig): {
   const config: LiveTrainingConfig = {
     model,
     sequences,
+    ...(validationSequences ? { validationSequences } : {}),
+    ...(samplePromptIds ? { samplePromptIds, sampleNewTokens: input.sampleNewTokens } : {}),
+    ...(input.selectedWeightName ? { selectedWeightName: input.selectedWeightName } : {}),
     seed: input.seed,
     batchSize: input.batchSize,
     totalSteps: input.totalSteps,
@@ -105,6 +155,10 @@ function validatedConfig(input: LiveTrainingConfig): {
     warmupSteps: config.warmupSteps,
     optimizer: config.optimizer,
     datasetHash: datasetHash(sequences),
+    validationHash: validationSequences ? datasetHash(validationSequences) : null,
+    samplePromptIds: samplePromptIds ?? null,
+    sampleNewTokens: config.sampleNewTokens ?? null,
+    selectedWeightName: config.selectedWeightName ?? null,
   });
   return { config, identity };
 }
@@ -327,6 +381,28 @@ export class LiveTrainingWorkerRuntime {
         run.batches = batchesAt(run.config, run.epoch);
       }
       if (run.step % run.config.displayEvery === 0 || run.step === run.config.totalSteps) {
+        const validation = run.config.validationSequences
+          ? validationLoss(
+              run.config.validationSequences,
+              run.registry,
+              run.config.model,
+              run.config.batchSize,
+              run.config.seed,
+            )
+          : null;
+        const sample = run.config.samplePromptIds
+          ? trainingSample(
+              run.config.samplePromptIds,
+              run.config.sampleNewTokens ?? 0,
+              run.registry,
+              run.config.model,
+              run.config.seed,
+              run.step,
+            )
+          : null;
+        const selectedWeight = run.config.selectedWeightName
+          ? selectedWeightSnapshot(run.registry, run.config.selectedWeightName)
+          : null;
         this.post({
           version: VERSION,
           runId: run.id,
@@ -334,9 +410,12 @@ export class LiveTrainingWorkerRuntime {
           step: run.step,
           totalSteps: run.config.totalSteps,
           trainLoss: result.loss,
+          validationLoss: validation,
           predictionCount: batch.predictionCount,
           learningRate,
           gradientNorm: update.gradientNorm,
+          sampleTokenIds: sample,
+          selectedWeight,
         });
       }
       if (run.step === run.config.totalSteps) {

@@ -5,8 +5,12 @@ export const LIVE_TRAINING_PROTOCOL_VERSION = 1 as const;
 
 export interface LiveTrainingConfig {
   readonly model: ModelConfig;
-  /** Tokenized teaching sequences, supplied by the future M5.2 preset. */
+  /** Tokenized training sequences. */
   readonly sequences: readonly (readonly number[])[];
+  readonly validationSequences?: readonly (readonly number[])[];
+  readonly samplePromptIds?: readonly number[];
+  readonly sampleNewTokens?: number;
+  readonly selectedWeightName?: string;
   readonly seed: number;
   readonly batchSize: number;
   readonly totalSteps: number;
@@ -44,6 +48,15 @@ export type LiveTrainingCommand =
 
 export type LiveTrainingState = 'running' | 'paused' | 'cancelled' | 'completed' | 'error';
 
+export interface SelectedWeightSnapshot {
+  readonly name: string;
+  readonly shape: readonly [number, number];
+  readonly values: readonly number[];
+  readonly histogramMinimum: number;
+  readonly histogramMaximum: number;
+  readonly histogramCounts: readonly number[];
+}
+
 export type LiveTrainingReply =
   | (CommandBase & {
       readonly type: 'status';
@@ -56,9 +69,12 @@ export type LiveTrainingReply =
       readonly step: number;
       readonly totalSteps: number;
       readonly trainLoss: number;
+      readonly validationLoss: number | null;
       readonly predictionCount: number;
       readonly learningRate: number;
       readonly gradientNorm: number;
+      readonly sampleTokenIds: readonly number[] | null;
+      readonly selectedWeight: SelectedWeightSnapshot | null;
     })
   | (CommandBase & {
       readonly type: 'checkpoint';

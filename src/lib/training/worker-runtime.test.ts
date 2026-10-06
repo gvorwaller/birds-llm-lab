@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelConfig } from '../data/schemas';
+import { decodeCheckpointWeights } from '../model/checkpoint';
+import { trainingSample, selectedWeightSnapshot, validationLoss } from './live-metrics';
+import { smallBirdNamePreset } from './live-preset';
 import { LiveTrainingWorkerRuntime } from './worker-runtime';
 import {
   LIVE_TRAINING_PROTOCOL_VERSION as VERSION,
@@ -114,10 +117,13 @@ describe('live training worker protocol', () => {
         'learningRate',
         'predictionCount',
         'runId',
+        'sampleTokenIds',
+        'selectedWeight',
         'step',
         'totalSteps',
         'trainLoss',
         'type',
+        'validationLoss',
         'version',
       ]);
       const cadence = await harness.send(
@@ -135,6 +141,17 @@ describe('live training worker protocol', () => {
         type: 'error',
         code: 'unsupported-version',
       });
+      const oversized = await harness.send(
+        {
+          version: VERSION,
+          runId: 'oversized',
+          type: 'start',
+          config: { ...config, selectedWeightName: 'token_embedding.weight' },
+          startPaused: true,
+        },
+        (reply) => reply.type === 'error' && reply.runId === 'oversized',
+      );
+      expect(oversized).toMatchObject({ code: 'invalid-config' });
     } finally {
       harness.dispose();
     }
@@ -248,6 +265,107 @@ describe('live training worker protocol', () => {
       );
     } finally {
       harness.dispose();
+    }
+  });
+
+  it('reports validation, seeded sample, and exact selected weights only at display steps', async () => {
+    const harness = new Harness();
+    const preset = { ...smallBirdNamePreset(2), totalSteps: 6, warmupSteps: 1, sampleNewTokens: 5 };
+    try {
+      await harness.send(
+        { version: VERSION, runId: 'run', type: 'start', config: preset, startPaused: true },
+        (reply) => reply.type === 'status' && reply.state === 'paused',
+      );
+      for (const step of [1, 2]) {
+        await harness.send(
+          harness.command('step'),
+          (reply) => reply.type === 'status' && reply.state === 'paused' && reply.step === step,
+        );
+      }
+      const reports = harness.replies.filter((reply) => reply.type === 'progress');
+      expect(reports).toHaveLength(1);
+      const report = reports[0];
+      if (report.type !== 'progress') throw new Error('Expected progress.');
+      const saved = await harness.send(
+        harness.command('checkpoint'),
+        (reply) => reply.type === 'checkpoint',
+      );
+      if (saved.type !== 'checkpoint') throw new Error('Expected checkpoint.');
+      const registry = decodeCheckpointWeights(
+        preset.model,
+        saved.checkpoint.weightIndex,
+        saved.checkpoint.weightBytes,
+      );
+      expect(report.validationLoss).toBe(
+        validationLoss(
+          preset.validationSequences ?? [],
+          registry,
+          preset.model,
+          preset.batchSize,
+          preset.seed,
+        ),
+      );
+      expect(report.sampleTokenIds).toEqual(
+        trainingSample(preset.samplePromptIds ?? [], 5, registry, preset.model, preset.seed, 2),
+      );
+      expect(report.selectedWeight).toEqual(
+        selectedWeightSnapshot(registry, preset.selectedWeightName ?? ''),
+      );
+      expect(report.selectedWeight?.histogramCounts.reduce((sum, count) => sum + count, 0)).toBe(
+        report.selectedWeight?.values.length,
+      );
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it('keeps final weights identical when display cadence drops visual reports', async () => {
+    const fast = new Harness();
+    const slow = new Harness();
+    const base = { ...smallBirdNamePreset(), totalSteps: 4, warmupSteps: 1, sampleNewTokens: 4 };
+    try {
+      for (const [harness, displayEvery] of [
+        [fast, 1],
+        [slow, 3],
+      ] as const) {
+        await harness.send(
+          {
+            version: VERSION,
+            runId: 'run',
+            type: 'start',
+            config: { ...base, displayEvery },
+            startPaused: true,
+          },
+          (reply) => reply.type === 'status' && reply.state === 'paused',
+        );
+        for (const step of [1, 2, 3, 4]) {
+          await harness.send(
+            harness.command('step'),
+            (reply) =>
+              reply.type === 'status' &&
+              reply.step === step &&
+              reply.state === (step === 4 ? 'completed' : 'paused'),
+          );
+        }
+      }
+      const fastSnapshot = await fast.send(
+        fast.command('checkpoint'),
+        (reply) => reply.type === 'checkpoint',
+      );
+      const slowSnapshot = await slow.send(
+        slow.command('checkpoint'),
+        (reply) => reply.type === 'checkpoint',
+      );
+      if (fastSnapshot.type !== 'checkpoint' || slowSnapshot.type !== 'checkpoint') {
+        throw new Error('Expected final checkpoints.');
+      }
+      expect(fastSnapshot.checkpoint.weightBytes).toEqual(slowSnapshot.checkpoint.weightBytes);
+      expect(fastSnapshot.checkpoint.optimizer).toEqual(slowSnapshot.checkpoint.optimizer);
+      expect(fast.replies.filter((reply) => reply.type === 'progress')).toHaveLength(4);
+      expect(slow.replies.filter((reply) => reply.type === 'progress')).toHaveLength(2);
+    } finally {
+      fast.dispose();
+      slow.dispose();
     }
   });
 });
