@@ -7,6 +7,7 @@
   import AttentionExplorer from './components/AttentionExplorer.svelte';
   import EmbeddingsLab from './components/EmbeddingsLab.svelte';
   import GenerationLab from './components/GenerationLab.svelte';
+  import TrainingProtocolBench from './components/TrainingProtocolBench.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
   let pathname = $state('/');
@@ -132,6 +133,8 @@
       <AttentionExplorer />
     {:else if currentRoute.path === '/generation'}
       <GenerationLab />
+    {:else if currentRoute.path === '/training'}
+      <TrainingProtocolBench />
     {:else}
       <section class="placeholder" aria-labelledby="placeholder-title">
         <div>

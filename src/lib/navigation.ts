@@ -71,8 +71,8 @@ export const routes: readonly LabRoute[] = [
     path: '/training',
     label: 'Training',
     eyebrow: 'Learning bench',
-    title: 'Slow down one gradient update.',
-    summary: 'Watch loss, gradients, optimizer state, and selected weights change.',
+    title: 'Control a training worker.',
+    summary: 'Start, pause, step, cancel, and checkpoint a small synthetic training run.',
     milestone: 'M5',
   },
   {
