@@ -9,6 +9,13 @@ import type {
   TrainingPresetId,
 } from './api-types';
 import { parseCorpusManifest, type CorpusManifest } from './schemas';
+import type { Gpt2Analysis } from '../../../server/gpt2/companion';
+
+export interface Gpt2Status {
+  installed: boolean;
+  model: string;
+  bytes: number;
+}
 
 function csrfToken(): string {
   const value = document.querySelector<HTMLMetaElement>('meta[name="birds-llm-lab-csrf"]')?.content;
@@ -35,6 +42,18 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getServiceStatus(): Promise<ServiceStatus> {
   return requestJson('/api/status');
+}
+
+export function getGpt2Status(): Promise<Gpt2Status> {
+  return requestJson('/api/gpt2/status');
+}
+
+export function analyzeGpt2(prompt: string): Promise<Gpt2Analysis> {
+  return requestJson('/api/gpt2/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  });
 }
 
 export function searchCorpusEvidence(query: string, page = 0): Promise<EvidenceSearchResponse> {

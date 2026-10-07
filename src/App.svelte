@@ -11,6 +11,7 @@
   import EvidenceWorkbench from './components/EvidenceWorkbench.svelte';
   import ParameterExplorer from './components/ParameterExplorer.svelte';
   import Glossary from './components/Glossary.svelte';
+  import Gpt2Comparison from './components/Gpt2Comparison.svelte';
   import { routeForPath, routes } from './lib/navigation';
 
   let pathname = $state('/');
@@ -142,6 +143,8 @@
       <EvidenceWorkbench />
     {:else if currentRoute.path === '/parameters'}
       <ParameterExplorer />
+    {:else if currentRoute.path === '/comparison'}
+      <Gpt2Comparison />
     {:else if currentRoute.path === '/glossary'}
       <Glossary />
     {:else}

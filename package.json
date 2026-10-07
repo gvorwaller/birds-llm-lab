@@ -25,6 +25,7 @@
     "verify:m6-parameters": "tsx scripts/verify-m6-parameters.ts",
     "benchmark:tokenizer": "tsx scripts/benchmark-tokenizer.ts",
     "benchmark:model": "tsx scripts/benchmark-model.ts",
+    "gpt2:install": "tsx scripts/install-gpt2.ts",
     "export": "tsx scripts/export-corpus.ts",
     "train:tokenizer": "tsx scripts/train-tokenizer.ts",
     "train": "tsx scripts/train.ts",
@@ -36,6 +37,7 @@
     "service:uninstall": "tsx scripts/install-launch-agent.ts uninstall"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.1",
     "pg": "^8.23.0",
     "svelte": "5.57.1"
   },

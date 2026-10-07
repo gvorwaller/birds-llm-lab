@@ -95,6 +95,15 @@ export const routes: readonly LabRoute[] = [
     milestone: 'M6',
   },
   {
+    path: '/comparison',
+    label: 'GPT-2 comparison',
+    eyebrow: 'Scale bench',
+    title: 'Run GPT-2 beside the tiny bird model.',
+    summary:
+      'Compare token boundaries, next-token probabilities, and short continuations on one prompt.',
+    milestone: 'M7',
+  },
+  {
     path: '/glossary',
     label: 'Glossary',
     eyebrow: 'Reference bench',

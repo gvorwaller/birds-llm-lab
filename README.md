@@ -21,6 +21,25 @@ The Parameters workbench covers every named tensor in the selected checkpoint,
 shows distribution statistics and a bounded heatmap, and links to its forward trace.
 The always-reachable Glossary defines every term from the original plan with
 plain language, applicable formulas, and links into the workbenches.
+The optional GPT-2 comparison at `/comparison` uses a separately cached,
+pretrained GPT-2 small model. It compares token boundaries, unfiltered next-token
+probabilities, and 20-token greedy continuations with the selected tiny checkpoint.
+The ONNX model used here does not expose attention matrices; inspect the tiny
+model's heads in the Attention workbench.
+
+## Optional local GPT-2 setup
+
+GPT-2 is not downloaded by `npm install` or by opening the app. On a Mac with
+Node 22 available, run `npm run gpt2:install` once from this checkout. That
+downloads about 480 MiB into the ignored `.cache/gpt2` directory and verifies a
+local-only inference call. Restart the installed service with
+`npm run service:restart`, then open [the comparison workbench](http://localhost:5301/comparison).
+Later analyses use the cache with remote model loading disabled. The original
+tiny-model workbenches work without GPT-2 installed. To remove GPT-2, delete
+`.cache/gpt2` and restart the service.
+
+If this Mac has a global `libvips` installation and `npm install` tries to build
+`sharp` from source, run the install with `SHARP_IGNORE_GLOBAL_LIBVIPS=1`.
 
 - [Original product plan](docs/plan.md)
 - [Implementation plan](docs/implementation-plan.md)
@@ -48,5 +67,6 @@ Use the project-local Node 22 runtime installed through npm scripts:
   histogram with the model config and forward trace.
 - `npm run test:browser` — keyboard/layout smoke at 1024 px and 1280 px widths.
 - `npm run service:status` — report the LaunchAgent state.
+- `npm run gpt2:install` — optional one-time GPT-2 download and offline check.
 
 Licensed under the [MIT License](LICENSE).

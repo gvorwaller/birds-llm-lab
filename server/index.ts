@@ -24,6 +24,7 @@ import {
   type TrainingRunner,
 } from './jobs/training-jobs.js';
 import { trainReadyCheckpoint } from './training/trainer.js';
+import { Gpt2Companion } from './gpt2/companion.js';
 
 export const LOOPBACK_HOST = '127.0.0.1';
 export const SERVICE_PORT = 5301;
@@ -232,10 +233,36 @@ async function routeApi(
   trainingCoordinator: TrainingJobCoordinator,
   checkpointCatalog: CheckpointCatalog,
   evidenceIndex: CorpusEvidenceIndex,
+  gpt2: Gpt2Companion,
   manifestPath: string,
   tokenizerPath: string,
   searchParams: URLSearchParams,
 ): Promise<void> {
+  if (request.method === 'GET' && pathname === '/api/gpt2/status') {
+    json(response, 200, await gpt2.status());
+    return;
+  }
+
+  if (request.method === 'POST' && pathname === '/api/gpt2/analyze') {
+    try {
+      const body = await readJsonBody(request);
+      if (
+        typeof body !== 'object' ||
+        body === null ||
+        Array.isArray(body) ||
+        Object.keys(body).length !== 1 ||
+        !('prompt' in body) ||
+        typeof body.prompt !== 'string'
+      ) {
+        throw new Error('Request must contain only a text prompt.');
+      }
+      json(response, 200, await gpt2.analyze(body.prompt));
+    } catch (error) {
+      reject(response, 400, error instanceof Error ? error.message : 'GPT-2 analysis failed.');
+    }
+    return;
+  }
+
   if (request.method === 'GET' && pathname === '/api/status') {
     const manifest = await readManifest(manifestPath);
     const status: ServiceStatus = {
@@ -375,6 +402,7 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
     join(dataDirectory, 'corpus.jsonl'),
     join(dataDirectory, 'manifest.json'),
   );
+  const gpt2 = new Gpt2Companion(projectDirectory);
   const checkpointDirectory = resolve(
     options.checkpointDirectory ?? join(projectDirectory, 'checkpoints'),
   );
@@ -450,6 +478,7 @@ export async function startLabServer(options: LabServerOptions = {}): Promise<Ru
           trainingCoordinator,
           checkpointCatalog,
           evidenceIndex,
+          gpt2,
           join(dataDirectory, 'manifest.json'),
           join(projectDirectory, 'src/assets/tokenizer-1024.json'),
           url.searchParams,
